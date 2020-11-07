@@ -49,7 +49,7 @@ def numerical_jacobian(f, x:Tensor, eps=1e-4):
         NJ[i, :] = (y_add - y_sub) / (2 * eps)
     return NJ
 
-def gradcheck(f, x, eps=1e-4, atol=5e-4, rtol=5e-4):
+def gradcheck(f, x, eps=1e-3, atol=5e-4, rtol=5e-4):
     # build jacobian matrices
     J = jacobian(f, x).numpy()
     NJ = numerical_jacobian(f, x, eps).numpy()

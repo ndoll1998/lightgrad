@@ -121,7 +121,7 @@ class div(Function):
         return Tensor(_unpack(a) / _unpack(b))
     def backward(ctx, out_grad):
         a, b = ctx.get_saved_tensors()
-        return out_grad / a, -a / b**2 * out_grad
+        return out_grad / b, -a / b**2 * out_grad
 
 @Tensor.register_op()
 @Tensor.register_op("__pow__")

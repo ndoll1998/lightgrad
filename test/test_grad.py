@@ -6,16 +6,15 @@ from lightgrad.grad.gradcheck import gradcheck
 import numpy as np
 np.random.seed(1337)
 
-
 class GradCheck(unittest.TestCase):
 
-    def unary_func(self, f, shape=(3,), l=-1, h=1, eps=1e-4):
+    def unary_func(self, f, shape=(3,), l=-1, h=1, eps=1e-3):
         t = Tensor.uniform(l, h, shape=shape)
         return self.assertTrue(gradcheck(f, t, eps=eps))
 
-    def simple_binary_func(self, f, shape=(3, 3), eps=1e-4):
-        a = Tensor.uniform(-1, 1, shape=shape)
-        b = Tensor.uniform(-1, 1, shape=shape)
+    def simple_binary_func(self, f, shape=(3, 3), l=-1, h=1, eps=1e-3):
+        a = Tensor.uniform(l, h, shape=shape)
+        b = Tensor.uniform(l, h, shape=shape)
         self.assertTrue(gradcheck(lambda a: f(a, b), a, eps=eps) and \
                         gradcheck(lambda b: f(a, b), b, eps=eps))
 
@@ -50,9 +49,13 @@ class GradCheck(unittest.TestCase):
         self.simple_binary_func(Tensor.sub)
     def test_mul(self):
         self.simple_binary_func(Tensor.mul)
+    def test_div(self):
+        self.simple_binary_func(Tensor.div, l=0.1, h=10)    # check positive values
+        self.simple_binary_func(Tensor.div, l=-10, h=-0.1)  # also check for negatives
     def test_dot(self):
         self.simple_binary_func(Tensor.mul, shape=(3, 3))        
-
+    def test_pow(self):
+        self.simple_binary_func(Tensor.pow, l=0, h=1)
         
     """ more complex operations """
     def test_linear_model(self):
@@ -67,14 +70,6 @@ class GradCheck(unittest.TestCase):
                 y = self.l2(y)
                 return y
         self.unary_func(Model(), shape=(4, 8))
-
-
-    """ Not Working """
-    # def test_div(self):
-    #     self.simple_binary_func(Tensor.div)
-    # def test_pow(self):
-    #     self.simple_binary_func(Tensor.pow)
-
 
 if __name__ == '__main__':
     unittest.main(verbose=2)

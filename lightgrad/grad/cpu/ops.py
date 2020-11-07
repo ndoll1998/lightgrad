@@ -1,6 +1,6 @@
 import numpy as np
-from .func import Function
-from .tensor import Tensor
+from ..func import Function
+from .tensor import CpuTensor as Tensor
 
 """ Helpers """
 _unpack = lambda t: t.data if isinstance(t, Tensor) else t
@@ -200,7 +200,7 @@ class cos(Function):
         return Tensor(np.cos(_unpack(t)))
     def backward(ctx, out_grad):
         t, = ctx.get_saved_tensors()
-        return -np.sin(t) * out_grad
+        return -t.sin() * out_grad
 
 @Tensor.register_op()
 class exp(Function):
@@ -248,7 +248,7 @@ class relu(Function):
         return Tensor(np.maximum(_unpack(t), 0.0))
     def backward(ctx, out_grad):
         t, = ctx.get_saved_tensors()
-        return np.log(1 + np.exp(t)) * out_grad
+        return (1 + t.exp()).log() * out_grad
 
 @Tensor.register_op()
 class softmax(Function):

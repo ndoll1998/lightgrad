@@ -1,4 +1,6 @@
 from .grads import Gradients
 from .func import Function
-from .tensor import Tensor
-from .ops import *
+# import tensors
+from .cpu.tensor import CpuTensor
+# default is cpu tensor
+from .cpu.tensor import CpuTensor as Tensor

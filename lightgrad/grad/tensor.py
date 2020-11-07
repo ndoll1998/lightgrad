@@ -1,10 +1,11 @@
 import numpy as np
+from abc import ABC
 from .grads import Gradients
 
-class Tensor(object):
+class Tensor(ABC):
 
-    def __init__(self, data:np.ndarray, requires_grad:bool =True):
-        self.__data = data.data if isinstance(data, Tensor) else data
+    def __init__(self, requires_grad:bool =True) -> None:
+        # gradient information
         self.__grad = None
         self.__requires_grad = requires_grad
         # expression tree context for gradient computation
@@ -19,39 +20,38 @@ class Tensor(object):
         return self
 
     @property
-    def data(self):
-        return self.__data
-    @property
-    def grad(self):
+    def grad(self) -> "Tensor":
         return self.__grad
     @property
-    def requires_grad(self):
+    def requires_grad(self) -> bool:
         return self.__requires_grad
 
     @property
     def dtype(self):
-        return self.data.dtype
+        raise NotImplementedError()
     @property
     def shape(self) -> tuple:
-        return self.data.shape
+        raise NotImplementedError()
 
-    def numel(self):
-        return np.prod(self.shape)
     def item(self):
-        return self.data.item()
+        raise NotImplementedError()
+    def numel(self) -> int:
+        return np.prod(self.shape)
 
     @staticmethod
-    def zeros(shape, requires_grad:bool =True):
-        data = np.zeros(shape).astype(np.float32)
-        return Tensor(data, requires_grad=requires_grad)
+    def zeros(shape, requires_grad:bool =True) -> "Tensor":
+        raise NotImplementedError()
     @staticmethod
-    def ones(shape, requires_grad:bool =True):
-        data = np.ones(shape).astype(np.float32)
-        return Tensor(data, requires_grad=requires_grad)
+    def ones(shape, requires_grad:bool =True) -> "Tensor":
+        raise NotImplementedError()
     @staticmethod
-    def uniform(shape, requires_grad:bool =True):
-        data = (np.random.uniform(-1, 1, size=shape) / np.sqrt(np.prod(shape))).astype(np.float32)
-        return Tensor(data, requires_grad=requires_grad)
+    def uniform(shape, requires_grad:bool =True) -> "Tensor":
+        raise NotImplementedError()
+
+    def copy(self, requires_grad:bool =True) -> "Tensor":
+        raise NotImplementedError()
+    def numpy(self) -> np.ndarray:
+        raise NotImplementedError()
 
     @Gradients.no_grad()
     def backward(self, allow_fill:bool =False) -> None:
@@ -60,7 +60,7 @@ class Tensor(object):
             return
         # only start backpropagation at item tensors
         if self.shape == (1,) or len(self.shape) == 0 or allow_fill:
-            self.__grad = Tensor.ones(self.shape, requires_grad=False)
+            self.__grad = self.__class__.ones(self.shape, requires_grad=False)
         else:
             raise RuntimeError("Can only backpropagate from item tensors!")
 
@@ -79,23 +79,23 @@ class Tensor(object):
             node_list.extend(ctxs)
             node_set.update(ctxs)
 
-    def add_grad(self, grad:np.ndarray) -> None:
+    def add_grad(self, grad:"Tensor") -> None:
         # check if requires gradient
         if self.requires_grad:    
             if self.grad is None:
-                self.__grad = Tensor(grad.data.copy(), requires_grad=False)
+                self.__grad = grad.copy(requires_grad=False)
             else:
                 self.__grad += grad
 
     def zero_grad(self) -> None:
         if self.requires_grad:
             if self.grad is None:
-                self.__grad = Tensor.zeros(self.shape, requires_grad=False)
+                self.__grad = self.__class__.zeros(self.shape, requires_grad=False)
             else:
                 self.__grad.data.fill(0)
 
-    @staticmethod
-    def register_op(name:str =None, op:type =None):
+    @classmethod
+    def register_op(cls, name:str =None, op:type =None):
         if op is not None:
             # direct use
             if not issubclass(op, Function):
@@ -103,14 +103,13 @@ class Tensor(object):
             # not sure why this is necessary, but without dispatch wrapper
             # the op function is treatet as a static member
             dispatch = (lambda self, *args, **kwargs: op(self, *args, **kwargs))
-            setattr(Tensor, name, dispatch)
+            setattr(cls, name, dispatch)
             return op
         else:
             # use as decorator
-            return lambda op: Tensor.register_op(name if name is not None else op.__name__, op)
+            return lambda op: cls.register_op(name if name is not None else op.__name__, op)
 
 
-# import operations to register them all
-# import at bottom to avoid circular import errors
+# imports at bottom to avoid circular import errors
 from .func import Function
-from . import ops
+from .cpu.tensor import CpuTensor

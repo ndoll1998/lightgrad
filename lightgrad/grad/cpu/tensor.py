@@ -21,6 +21,10 @@ class CpuTensor(Tensor):
         return self.data.item()
 
     @staticmethod
+    def empty(shape, requires_grad:bool =True) -> "CpuTensor":
+        data = np.empty(shape).astype(np.float32)
+        return CpuTensor(data, requires_grad=requires_grad)
+    @staticmethod
     def zeros(shape, requires_grad:bool =True) -> "CpuTensor":
         data = np.zeros(shape).astype(np.float32)
         return CpuTensor(data, requires_grad=requires_grad)
@@ -29,8 +33,8 @@ class CpuTensor(Tensor):
         data = np.ones(shape).astype(np.float32)
         return CpuTensor(data, requires_grad=requires_grad)
     @staticmethod
-    def uniform(shape, requires_grad:bool =True) -> "CpuTensor":
-        data = (np.random.uniform(-1, 1, size=shape) / np.sqrt(np.prod(shape))).astype(np.float32)
+    def uniform(low, high, shape, requires_grad:bool =True) -> "CpuTensor":
+        data = np.random.uniform(low, high, size=shape).astype(np.float32)
         return CpuTensor(data, requires_grad=requires_grad)
 
     def copy(self, requires_grad:bool =True) -> "CpuTensor":

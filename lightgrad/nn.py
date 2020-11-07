@@ -47,8 +47,8 @@ class linear(Function):
 class Linear(Module):
     def __init__(self, in_feats:int, out_feats:int, bias:bool =True):
         Module.__init__(self)
-        self.w = Parameter(Tensor.uniform((in_feats, out_feats)))
-        self.b = Parameter(Tensor.uniform((1, out_feats))) if bias else None
+        self.w = Parameter(Tensor.xavier((in_feats, out_feats)))
+        self.b = Parameter(Tensor.xavier((1, out_feats))) if bias else None
     def forward(self, x):
         return linear(x, self.w, self.b)
 
@@ -74,8 +74,8 @@ def conv(x, w, b=None, stride:int =1):
 class Conv2d(Module):
     def __init__(self, in_channels:int, out_channels:int, kernelsize:int =3, stride:int =1, pad:int =None, bias:bool =True):
         Module.__init__(self)
-        self.w = Parameter(Tensor.uniform((out_channels, in_channels, kernelsize, kernelsize)))
-        self.b = Parameter(Tensor.uniform((out_channels, 1, 1, 1))) if bias else None
+        self.w = Parameter(Tensor.xavier((out_channels, in_channels, kernelsize, kernelsize)))
+        self.b = Parameter(Tensor.xavier((out_channels, 1, 1, 1))) if bias else None
         self.s, self.p = stride, (kernelsize // 2) if pad is None else pad
     def forward(self, x):
         return conv(x.pad(self.p), self.w, self.b, stride=self.s)

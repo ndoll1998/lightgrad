@@ -265,8 +265,13 @@ class softmax(Function):
 class __getitem(Function):
     def forward(ctx, a, idx):
         idx = tuple(_unpack(i) for i in idx) if isinstance(idx, tuple) else _unpack(idx)
+        ctx.save_for_backward(a.shape, idx)
         return Tensor(_unpack(a)[idx])
-    # TODO: backward
+    def backward(ctx, out_grad):
+        shape, idx = ctx.get_saved_tensors()
+        grad = Tensor.zeros(shape, requires_grad=False)
+        grad[idx] = out_grad
+        return grad
 
 @Tensor.register_op("__setitem__")
 class __setitem(Function):

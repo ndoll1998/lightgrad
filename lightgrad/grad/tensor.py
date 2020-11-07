@@ -39,14 +39,23 @@ class Tensor(ABC):
         return np.prod(self.shape)
 
     @staticmethod
+    def empty(shape, requires_grad:bool =True) -> "Tensor":
+        raise NotImplementedError()
+    @staticmethod
     def zeros(shape, requires_grad:bool =True) -> "Tensor":
         raise NotImplementedError()
     @staticmethod
     def ones(shape, requires_grad:bool =True) -> "Tensor":
         raise NotImplementedError()
     @staticmethod
-    def uniform(shape, requires_grad:bool =True) -> "Tensor":
+    def uniform(low, high, shape, requires_grad:bool =True) -> "Tensor":
         raise NotImplementedError()
+
+    @classmethod
+    def xavier(cls, shape, requires_grad:bool =True) -> "Tensor":
+        t = cls.uniform(-1, 1, shape=shape, requires_grad=requires_grad)
+        t /= np.sqrt(t.numel())
+        return t
 
     def copy(self, requires_grad:bool =True) -> "Tensor":
         raise NotImplementedError()
@@ -72,8 +81,8 @@ class Tensor(ABC):
             ctx = node_list.pop(0)
             node_set.remove(ctx)
             # backpropagate and get parent contexts
-            parent_tensors = ctx._backpropagate()
-            ctxs = (t.__ctx for t in parent_tensors if t.__ctx is not None)
+            ctx._backpropagate()
+            ctxs = (t.__ctx for t in ctx.parent_tensors if t.__ctx is not None)
             # add to nodes
             ctxs = set(ctx for ctx in ctxs if ctx not in node_set)
             node_list.extend(ctxs)
@@ -87,12 +96,17 @@ class Tensor(ABC):
             else:
                 self.__grad += grad
 
-    def zero_grad(self) -> None:
+    def zero_grad(self, zero_graph_grads:bool =False) -> None:
+        # clear my gradient
         if self.requires_grad:
             if self.grad is None:
                 self.__grad = self.__class__.zeros(self.shape, requires_grad=False)
             else:
                 self.__grad.data.fill(0)
+        # recursivly clear gradients of all parents
+        if zero_graph_grads and (self.__ctx is not None):
+            for t in self.__ctx.parent_tensors:
+                t.zero_grad(zero_graph_grads=True)
 
     @classmethod
     def register_op(cls, name:str =None, op:type =None):

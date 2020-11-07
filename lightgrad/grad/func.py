@@ -26,6 +26,10 @@ class Function(object, metaclass=__FunctionMeta):
         self.__parents = tuple(parents)
         self.__children = None
         self.__saved_for_backward = tuple()
+    @property
+    def parent_tensors(self) -> Tuple["Tensor"]:
+        # return all parent tensors that require gradients
+        return filter(lambda t: isinstance(t, Tensor) and t.requires_grad, self.__parents)
 
     def _set_children(self, *children):
         self.__children = tuple(children)
@@ -40,8 +44,6 @@ class Function(object, metaclass=__FunctionMeta):
             if isinstance(t, Tensor) and t.requires_grad:
                 assert g is not None
                 t.add_grad(g)
-        # return all parent tensors that require gradients
-        return filter(lambda t: isinstance(t, Tensor) and t.requires_grad, self.__parents)
 
     def save_for_backward(ctx, *args):
         ctx.__saved_for_backward += tuple(args)

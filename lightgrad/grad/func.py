@@ -32,7 +32,6 @@ class Function(object, metaclass=__FunctionMeta):
     def _set_children(self, *children):
         self.__children = children
     def _backpropagate(self, out_grad) -> Tuple["Tensor"]:
-        assert len(out_grads) > 0, "No gradients to backpropagate"
         # get all gradients and propagate backwards
         in_grads = self.backward(out_grad)
         in_grads = in_grads if isinstance(in_grads, tuple) else (in_grads,)

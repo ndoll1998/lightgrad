@@ -1,6 +1,7 @@
 import numpy as np
 from abc import ABC
 from .grads import Gradients
+from collections import OrderedDict
 
 class Tensor(ABC):
 
@@ -55,7 +56,7 @@ class Tensor(ABC):
     def xavier(cls, shape, requires_grad:bool =True) -> "Tensor":
         t = cls.uniform(-1, 1, shape=shape, requires_grad=requires_grad)
         t /= np.sqrt(t.numel())
-        return t
+        return t.detach()
 
     def copy(self, requires_grad:bool =True) -> "Tensor":
         raise NotImplementedError()
@@ -73,20 +74,18 @@ class Tensor(ABC):
         else:
             raise RuntimeError("Can only backpropagate from item tensors!")
 
-        node_set = {self.__ctx}
-        node_list = [self.__ctx]
+        # nodes map contexts to their output gradient
+        nodes = OrderedDict({self.__ctx: self.grad,})
         # breadth-first backpropagation
-        while len(node_list) > 0:
-            # get current node/context
-            ctx = node_list.pop(0)
-            node_set.remove(ctx)
+        while len(nodes) > 0:
+            # get current node and the corresponding output gradients
+            ctx, out_grad = nodes.popitem()
             # backpropagate and get parent contexts
-            ctx._backpropagate()
-            ctxs = (t.__ctx for t in ctx.parent_tensors if t.__ctx is not None)
-            # add to nodes
-            ctxs = set(ctx for ctx in ctxs if ctx not in node_set)
-            node_list.extend(ctxs)
-            node_set.update(ctxs)
+            ctx._backpropagate(out_grad)
+            in_tensors = tuple(t for t in ctx.parent_tensors if t.__ctx)
+            # update nodes
+            new_nodes = {t.__ctx: t.grad for t in ctx.parent_tensors if t.__ctx is not None}
+            nodes.update(new_nodes)
 
     def add_grad(self, grad:"Tensor") -> None:
         # check if requires gradient

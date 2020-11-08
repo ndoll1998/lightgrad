@@ -15,8 +15,19 @@ class GradCheck(unittest.TestCase):
     def simple_binary_func(self, f, shape=(3, 3), l=-1, h=1, eps=1e-3):
         a = Tensor.uniform(l, h, shape=shape)
         b = Tensor.uniform(l, h, shape=shape)
-        self.assertTrue(gradcheck(lambda a: f(a, b), a, eps=eps) and \
-                        gradcheck(lambda b: f(a, b), b, eps=eps))
+        self.assertTrue(gradcheck(lambda a: f(a, b), a, eps=eps))
+        self.assertTrue(gradcheck(lambda b: f(a, b), b, eps=eps))
+
+    """ transformations """
+    def test_transpose(self):
+        self.unary_func(Tensor.transpose, shape=(3, 2))
+    def test_reshape(self):
+        self.unary_func(lambda x: Tensor.reshape(x, -1))
+    def test_slide_window(self):
+        self.unary_func(lambda x: Tensor.slide_window(x, kernel=(2, 2), strides=(1, 1)), shape=(3, 3))
+        self.unary_func(lambda x: Tensor.slide_window(x, kernel=(2, 2), strides=(2, 2)), shape=(4, 4))
+    def test_pad(self):
+        self.unary_func(lambda x: Tensor.pad(x, padding=2), shape=(3, 3))
 
     """ unary operators """
     def test_neg(self):
@@ -33,10 +44,11 @@ class GradCheck(unittest.TestCase):
         self.unary_func(Tensor.sigmoid)
     def test_tanh(self):
         self.unary_func(Tensor.tanh)
-    # we use an gradient approximation for relu
+    # we use a gradient approximation for relu
     # def test_relu(self):
     #   self.unary_func(Tensor.relu, l=1, h=10)
 
+    """ Reductions/Selections """
     def test_max(self):
         self.unary_func(Tensor.max)
     def test_min(self):
@@ -70,6 +82,15 @@ class GradCheck(unittest.TestCase):
                 y = self.l2(y)
                 return y
         self.unary_func(Model(), shape=(4, 8))
+
+    def test_convolution(self):
+        import lightgrad.nn as nn
+        x = Tensor.uniform(-1, 1, shape=(3, 2, 5, 5))
+        w = Tensor.uniform(-1, 1, shape=(4, 2, 3, 3))
+        b = Tensor.uniform(-1, 1, shape=(4,))
+        self.assertTrue(gradcheck(lambda x: nn.conv(x, w, b), x))
+        self.assertTrue(gradcheck(lambda w: nn.conv(x, w, b), w))
+        self.assertTrue(gradcheck(lambda b: nn.conv(x, w, b), b))
 
 if __name__ == '__main__':
     unittest.main(verbose=2)

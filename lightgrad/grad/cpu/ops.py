@@ -1,6 +1,7 @@
 import numpy as np
 from ..func import Function
 from .tensor import CpuTensor as Tensor
+from math import ceil
 
 """ Helpers """
 _unpack = lambda t: t.data if isinstance(t, Tensor) else t
@@ -44,7 +45,7 @@ class slide_window(Function):
     def forward(ctx, t, kernel, strides):
         assert len(t.shape) >= len(kernel) == len(strides) 
         t, n = _unpack(t), len(kernel)
-        ctx.save_for_backward(t.shape, kernel, strides)
+        ctx.save_for_backward(t.shape, kernel, strides, n)
         # build shape and strides
         shape = t.shape[:-n] + tuple((d - k) // s + 1 for d, k, s in zip(t.shape[-n:], kernel, strides)) + kernel
         strides = t.strides[:-n] + tuple(ts * ws for ts, ws in zip(t.strides[-n:], strides)) + t.strides[-n:]
@@ -52,11 +53,19 @@ class slide_window(Function):
         return Tensor(np.lib.stride_tricks.as_strided(t, shape=shape, strides=strides))
     def backward(ctx, out_grad):
         # create output gradient
-        in_shape, kernel, strides = ctx.get_saved_tensors()
+        in_shape, kernel, strides, n = ctx.get_saved_tensors()
         grad = Tensor.zeros(in_shape)
-        # match shapes and add inplace
+        # match shapes
         grad_windows = slide_window(grad, kernel, strides)
-        grad_windows += out_grad
+        # sum gradient of each kernel element one at a time
+        # to avoid overlaps during summation
+        skip_dims = tuple(slice(0, s) for s in grad_windows.shape[:-n])
+        # actually add gradients in blocks of size according to strides
+        # this leads to maximum non-overlapping blocks and thus minimal running time 
+        strided_shape = tuple(ceil(ks/s) for ks, s in zip(kernel, strides))
+        for idx in np.ndindex(strided_shape):
+            idx = skip_dims + tuple(slice(i*s, i*s+s) for i, s in zip(idx, strides))
+            grad_windows[idx] += out_grad[idx]
         # return gradient tensor
         return grad
 

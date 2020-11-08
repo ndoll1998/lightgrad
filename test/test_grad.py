@@ -26,6 +26,7 @@ class GradCheck(unittest.TestCase):
     def test_slide_window(self):
         self.unary_func(lambda x: Tensor.slide_window(x, kernel=(2, 2), strides=(1, 1)), shape=(3, 3))
         self.unary_func(lambda x: Tensor.slide_window(x, kernel=(2, 2), strides=(2, 2)), shape=(4, 4))
+        self.unary_func(lambda x: Tensor.slide_window(x, kernel=(2, 2, 2), strides=(1, 2, 2)), shape=(2, 4, 4))
     def test_pad(self):
         self.unary_func(lambda x: Tensor.pad(x, padding=2), shape=(3, 3))
 

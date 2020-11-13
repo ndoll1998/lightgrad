@@ -37,7 +37,7 @@ class Tensor(ABC):
     def item(self):
         raise NotImplementedError()
     def numel(self) -> int:
-        return np.prod(self.shape)
+        return int(np.prod(self.shape))
 
     @staticmethod
     def empty(shape, requires_grad:bool =True) -> "Tensor":

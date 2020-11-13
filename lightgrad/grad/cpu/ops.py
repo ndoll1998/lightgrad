@@ -82,7 +82,7 @@ class pad(Function):
         p, dims = ctx.get_saved_tensors()
         idx = list(slice(d) for d in out_grad.shape)
         for i in dims:
-            idx[i] = slice(p, -p)
+            idx[i] = slice(p, out_grad.shape[i] - p)
         return out_grad[tuple(idx)]
 
 
@@ -259,7 +259,8 @@ class relu(Function):
         return Tensor(np.maximum(_unpack(t), 0.0))
     def backward(ctx, out_grad):
         t, = ctx.get_saved_tensors()
-        return (1 + t.exp()).log() * out_grad
+        return Tensor(_unpack(out_grad) * (_unpack(t) >= 0))
+        # return (1 + t.exp()).log() * out_grad
 
 @Tensor.register_op()
 class softmax(Function):
@@ -295,31 +296,26 @@ class __setitem(Function):
 """ Reductions """
 
 @Tensor.register_op()
-class gather(Function):
-    def forward(ctx, t, idx, axis:int =-1):
-        assert axis is not None
-        assert len(idx.shape) == len(t.shape) - 1
-        t = _unpack(t)
-        idx = np.expand_dims(idx, axis=axis)
-        ctx.save_for_backward(t.shape, idx, axis)
-        return Tensor(np.take_along_axis(t, idx, axis=axis))
+class max(Function):
+    def forward(ctx, x, axis:int =-1):
+        x = _unpack(x)
+        val = np.max(x, axis=axis)
+        ctx.save_for_backward(x == val)
+        return Tensor(val)
     def backward(ctx, out_grad):
-        shape, idx, axis = ctx.get_saved_tensors()
-        grad = Tensor.zeros(shape)
-        np.put_along_axis(_unpack(grad), idx, _unpack(out_grad), axis=axis)
-        return Tensor(grad)
+        mask, = ctx.get_saved_tensors()
+        return out_grad * mask
 
 @Tensor.register_op()
-class max(gather):
-    def forward(ctx, t, axis:int =-1):
-        idx = np.argmax(_unpack(t), axis=axis)
-        return gather.forward(ctx, t, idx, axis=axis)
-
-@Tensor.register_op()
-class min(gather):
-    def forward(ctx, t, axis:int =-1):
-        idx = np.argmin(_unpack(t), axis=axis)
-        return gather.forward(ctx, t, idx, axis=axis)
+class min(Function):
+    def forward(ctx, x, axis:int =-1):
+        x = _unpack(x)
+        val = np.min(x, axis=axis)
+        ctx.save_for_backward(x == val)
+        return Tensor(val)
+    def backward(ctx, out_grad):
+        mask, = ctx.get_saved_tensors()
+        return out_grad * mask
 
 @Tensor.register_op()
 class mean(Function):
@@ -327,8 +323,42 @@ class mean(Function):
         return Tensor(_unpack(t).mean(*args, **kwargs))
     # TODO: backward
 
-@Tensor.register_op()
-class sum(Function):
+@Tensor.register_op("sum")
+class _sum(Function):
     def forward(ctx, t, *args, **kwargs):
         return Tensor(_unpack(t).sum(*args, **kwargs))
     # TODO: backward
+
+
+""" convolution operators """
+
+@Tensor.register_op()
+class max_pool(Function):
+    def forward(ctx, t, kernelsize:tuple=(2, 2)):
+        a = _unpack(t)
+        n, m = len(kernelsize), len(a.shape)
+        # p = a.reshape(128, 1, 14, 2, 14, 2)
+        pooled_shape = sum(tuple((s//ks, ks) for s, ks in zip(a.shape[-n:], kernelsize)), tuple())
+        p = a.reshape(a.shape[:-n] + pooled_shape)
+        # p = p.transpose(3, 5, 0, 1, 2, 4)
+        permut_idx = tuple(range(m-n+1,m+n,2)) + tuple(range(m-n)) + tuple(range(m-n,m+n,2))
+        p = p.transpose(*permut_idx)
+        # p = p.reshape(4, 128, 1, 14, 14)
+        flat_shape = (np.prod(kernelsize),) + a.shape[:-n] + tuple((s//ks for s, ks in zip(a.shape[-n:], kernelsize)))
+        p = p.reshape(*flat_shape)
+        # pool max and create pooling mask for backward
+        y = p.max(axis=0)
+        ctx.save_for_backward(p == y, kernelsize, a.shape)
+        # return tensor
+        return Tensor(y)
+    def backward(ctx, out_grad):
+        mask, kernelsize, shape = ctx.get_saved_tensors()
+        n, m = len(kernelsize), len(shape)
+        # build pooling gradient
+        g = mask * np.expand_dims(_unpack(out_grad), 0).repeat(np.prod(kernelsize), axis=0)
+        # backward pooling windows
+        g = g.reshape(*kernelsize, *g.shape[1:])
+        permut_idx = tuple(range(m-n,m)) + sum(((m+i, i) for i in range(n)), tuple())
+        g = g.transpose(*permut_idx).reshape(*shape)
+        # return tensor
+        return Tensor(g, requires_grad=False)

@@ -17,8 +17,8 @@ class CNN(nn.Module):
         self.c2 = nn.Conv2d(2, 4, kernelsize=3, bias=False)
         self.l1 = nn.Linear(7 * 7 * 4, 10)
     def forward(self, x):
-        y = nn.max_pool(self.c1(x)).relu()
-        y = nn.max_pool(self.c2(y)).relu()
+        y = self.c1(x).relu().max_pool()
+        y = self.c2(y).relu().max_pool()
         y = self.l1(y.reshape(-1, 7 * 7 * 4))
         return y
 

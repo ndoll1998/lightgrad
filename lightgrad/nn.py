@@ -32,15 +32,15 @@ class Module(object):
 
 class linear(Function):
     def forward(ctx, x, w, b=None):
-        ctx.save_for_backward(x, w)
+        ctx.save_for_backward(x, w, b is not None)
         return (x @ w + b) if b is not None else (x @ w)
     def backward(ctx, out_grad):
         # read cache
-        x, w = ctx.get_saved_tensors()
+        x, w, b = ctx.get_saved_tensors()
         # compute gradients
         x_grad = out_grad @ w.T()
         w_grad = x.T() @ out_grad
-        b_grad = out_grad.sum(axis=0, keepdims=True)
+        b_grad = out_grad.sum(axis=0, keepdims=True) if b else None
         # return
         return x_grad, w_grad, b_grad
 
@@ -78,18 +78,5 @@ class Conv2d(Module):
         self.b = Parameter(Tensor.xavier((out_channels, 1, 1, 1))) if bias else None
         self.s, self.p = stride, (kernelsize // 2) if pad is None else pad
     def forward(self, x):
-        return conv(x.pad(self.p), self.w, self.b, stride=self.s)
+        return conv(x.pad(self.p) if self.p > 0 else x, self.w, self.b, stride=self.s)
 
-
-""" Pooling """
-
-def max_pool(x, winsize:int =2, strides:int =2, ndims:int =2):
-    """ Max-Pooling over arbitrary dimensions """
-    winsize = (winsize,) * ndims if isinstance(winsize, int) else winsize
-    strides = (strides,) * ndims if isinstance(strides, int) else strides
-    # check kernel and strides
-    assert len(winsize) == len(strides)
-    ndims = len(winsize)
-    # slide window over input and pool maximum from each window
-    windows = x.slide_window(kernel=winsize, strides=strides)
-    return windows.reshape(*windows.shape[:-ndims], -1).max(axis=-1).reshape(*windows.shape[:-ndims])

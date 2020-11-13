@@ -340,7 +340,7 @@ class conv(Function):
         # this leads to maximum non-overlapping blocks and thus minimal running time 
         # also if dimensions of shape and kernel align then there is only one block in that dimension
         strides = tuple(s if ks < d else d for s, ks, d in zip(strides, w_shape[1:], in_shape[-n:]))
-        strided_shape = tuple(ceil(ks/s) for ks, s in zip(w_shape, strides))
+        strided_shape = tuple(ceil(ks/s) for ks, s in zip(w_shape[1:], strides))
         for idx in np.ndindex(strided_shape):
             idx = skip_dims + tuple(slice(i*s, i*s+s) for i, s in zip(idx, strides))
             x_grad_windows[idx] += out_x_grad_windows[idx]

@@ -3,7 +3,7 @@ sys.path.insert(0, "../")
 
 import numpy as np
 import matplotlib.pyplot as plt
-from tqdm import tqdm
+from tqdm import trange
 
 from lightgrad import nn
 from lightgrad.loss import cross_entropy
@@ -31,27 +31,25 @@ if __name__ == '__main__':
     model = CNN()
     optim = AdaBelief(model.parameters(), lr=0.001)
 
-    epochs = 3
+    steps = 1000
     # train model
     losses = []
-    with tqdm(total=len(mnist_train) * epochs) as pbar:
-        pbar.set_description("Train", refresh=True)
-
-        for e in range(epochs):
-            for x, y_hat in mnist_train:
-                # prepare input and target
-                x = x.reshape(x.shape[0], 1, 28, 28).detach()
-                # predict and compute error
-                y = model(x)
-                l = cross_entropy(y, y_hat)
-                # optimize
-                optim.zero_grad()
-                l.backward()
-                optim.step()
-                # progress
-                losses.append(l.data.item())
-                pbar.set_postfix({'Loss': sum(losses[-100:]) / min(100, len(losses))})
-                pbar.update(1)
+    for i in (pbar := trange(steps)):
+        # get a random data sample
+        idx = np.random.randint(0, mnist_train.n, size=128)
+        x, y_hat = mnist_train[idx]
+        x = x.reshape(-1, 1, 28, 28).detach()
+        # predict and compute error
+        y = model(x)
+        l = cross_entropy(y, y_hat)
+        # optimize
+        optim.zero_grad()
+        l.backward()
+        optim.step()
+        # progress
+        losses.append(l.data.item())
+        pbar.set_postfix({'loss': sum(losses[-100:]) / min(100, len(losses))})
+        pbar.update(1)
 
     # evaluate model
     total_hits = 0

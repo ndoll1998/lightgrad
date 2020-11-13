@@ -87,9 +87,10 @@ class Tensor(ABC):
             new_nodes = {t.__ctx: t.grad for t in ctx.parent_tensors if t.__ctx is not None}
             nodes.update(new_nodes)
 
+    @Gradients.no_grad()
     def add_grad(self, grad:"Tensor") -> None:
         # check if requires gradient
-        if self.requires_grad:    
+        if self.requires_grad:
             if self.grad is None:
                 self.__grad = grad.copy(requires_grad=False)
             else:

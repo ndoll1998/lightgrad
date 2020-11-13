@@ -337,16 +337,16 @@ class max_pool(Function):
     def forward(ctx, t, kernelsize:tuple=(2, 2)):
         a = _unpack(t)
         n, m = len(kernelsize), len(a.shape)
-        # p = a.reshape(128, 1, 14, 2, 14, 2)
+        # split up pooling dimensions
         pooled_shape = sum(tuple((s//ks, ks) for s, ks in zip(a.shape[-n:], kernelsize)), tuple())
         p = a.reshape(a.shape[:-n] + pooled_shape)
-        # p = p.transpose(3, 5, 0, 1, 2, 4)
+        # permute dimensions to create windows
         permut_idx = tuple(range(m-n+1,m+n,2)) + tuple(range(m-n)) + tuple(range(m-n,m+n,2))
         p = p.transpose(*permut_idx)
-        # p = p.reshape(4, 128, 1, 14, 14)
+        # flatten pooling windows
         flat_shape = (np.prod(kernelsize),) + a.shape[:-n] + tuple((s//ks for s, ks in zip(a.shape[-n:], kernelsize)))
         p = p.reshape(*flat_shape)
-        # pool max and create pooling mask for backward
+        # max pool and create mask for backward
         y = p.max(axis=0)
         ctx.save_for_backward(p == y, kernelsize, a.shape)
         # return tensor

@@ -30,27 +30,13 @@ class Module(object):
 
 """ Linear Layer """
 
-class linear(Function):
-    def forward(ctx, x, w, b=None):
-        ctx.save_for_backward(x, w, b is not None)
-        return (x @ w + b) if b is not None else (x @ w)
-    def backward(ctx, out_grad):
-        # read cache
-        x, w, b = ctx.get_saved_tensors()
-        # compute gradients
-        x_grad = out_grad @ w.T()
-        w_grad = x.T() @ out_grad
-        b_grad = out_grad.sum(axis=0, keepdims=True) if b else None
-        # return
-        return x_grad, w_grad, b_grad
-
 class Linear(Module):
     def __init__(self, in_feats:int, out_feats:int, bias:bool =True):
         Module.__init__(self)
         self.w = Parameter(Tensor.xavier((in_feats, out_feats)))
         self.b = Parameter(Tensor.xavier((1, out_feats))) if bias else None
     def forward(self, x):
-        return linear(x, self.w, self.b)
+        return (x @ self.w + self.b) if self.b is not None else (x @ self.w)
 
 
 """ Convolution """
@@ -65,7 +51,7 @@ def conv(x, w, b=None, stride:int =1):
     flat_w = w.transpose(*range(1, n + 1), 0).reshape(-1, out_c)    # flatten kernel and keep out-channel dimension
     flat_b = None if b is None else b.reshape(1, -1)
     # pass though linear
-    linear_out = linear(flat_x, flat_w, flat_b)
+    linear_out = (flat_x @ flat_w + flat_b) if flat_b is not None else (flat_x @ flat_w)
     # reshape
     out_shape = windows.shape[:-2*n] + windows.shape[-2*n+1:-n] + (out_c,)
     out_permutation = tuple(range(0, len(out_shape)-n)) + (-1,) + tuple(range(len(out_shape)-n, len(out_shape)-1))

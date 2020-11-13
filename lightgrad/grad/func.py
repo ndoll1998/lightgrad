@@ -40,6 +40,12 @@ class Function(object, metaclass=__FunctionMeta):
         for t, g in zip(self.__parents, in_grads):
             if isinstance(t, Tensor) and t.requires_grad:
                 assert g is not None
+                # reverse broadcast gradient shape
+                if g.shape != t.shape:
+                    broadcast_idx = tuple(i for i, (x, y) in enumerate(zip(t.shape, g.shape)) if x != y)
+                    assert all((t.shape[i] == 1 for i in broadcast_idx)), "Cannot broadcast shapes %s and %s" % (t.shape, g.shape)
+                    g = g.sum(axis=broadcast_idx, keepdims=True)
+                # add gradient
                 t.add_grad(g)
         # return input gradients
         return in_grads

@@ -40,51 +40,6 @@ class reshape(Function):
         shape, = ctx.get_saved_tensors()
         return out_grad.reshape(*shape)
 
-@Tensor.register_op()
-class slide_window(Function):
-    def forward(ctx, t, kernel, strides):
-        assert len(t.shape) >= len(kernel) == len(strides) 
-        t, n = _unpack(t), len(kernel)
-        ctx.save_for_backward(t.shape, kernel, strides, n)
-        # build shape and strides
-        shape = t.shape[:-n] + tuple((d - k) // s + 1 for d, k, s in zip(t.shape[-n:], kernel, strides)) + kernel
-        strides = t.strides[:-n] + tuple(ts * ws for ts, ws in zip(t.strides[-n:], strides)) + t.strides[-n:]
-        # slide window
-        return Tensor(np.lib.stride_tricks.as_strided(t, shape=shape, strides=strides))
-    def backward(ctx, out_grad):
-        # create output gradient
-        in_shape, kernel, strides, n = ctx.get_saved_tensors()
-        grad = Tensor.zeros(in_shape)
-        # match shapes
-        grad_windows = slide_window(grad, kernel, strides)
-        # sum gradient of each kernel element one at a time
-        # to avoid overlaps during summation
-        skip_dims = tuple(slice(0, s) for s in grad_windows.shape[:-n])
-        # actually add gradients in blocks of size according to strides
-        # this leads to maximum non-overlapping blocks and thus minimal running time 
-        # also if dimensions of shape and kernel align then there is only one block in that dimension
-        strides = tuple(s if ks < d else d for s, ks, d in zip(strides, kernel, in_shape[-n:]))
-        strided_shape = tuple(ceil(ks/s) for ks, s in zip(kernel, strides))
-        for idx in np.ndindex(strided_shape):
-            idx = skip_dims + tuple(slice(i*s, i*s+s) for i, s in zip(idx, strides))
-            grad_windows[idx] += out_grad[idx]
-        # return gradient tensor
-        return grad
-
-@Tensor.register_op()
-class pad(Function):
-    def forward(ctx, t, padding:int, dims:tuple =(-2, -1), value:float =0.0):
-        ctx.save_for_backward(padding, dims)
-        pad_width = np.zeros((len(t.shape), 2), dtype=np.int32)
-        pad_width[dims, :] = padding
-        return Tensor(np.pad(_unpack(t), pad_width=pad_width.tolist(), constant_values=value))
-    def backward(ctx, out_grad):
-        p, dims = ctx.get_saved_tensors()
-        idx = list(slice(d) for d in out_grad.shape)
-        for i in dims:
-            idx[i] = slice(p, out_grad.shape[i] - p)
-        return out_grad[tuple(idx)]
-
 
 """ Basic Math Operators """
 
@@ -333,10 +288,75 @@ class _sum(Function):
 """ convolution operators """
 
 @Tensor.register_op()
+class conv(Function):
+    @staticmethod
+    def __stride(t, kernel_shape, strides):
+        n = len(kernel_shape)
+        shape = t.shape[:-n] + tuple((d - k) // s + 1 for d, k, s in zip(t.shape[-n:], kernel_shape, strides)) + kernel_shape
+        strides = t.strides[:-n] + tuple(ts * ws for ts, ws in zip(t.strides[-n:], strides)) + t.strides[-n:]
+        return np.lib.stride_tricks.as_strided(t, shape=shape, strides=strides)
+
+    def forward(ctx, t, kernel, strides):
+        # preparation
+        t, kernel, n, m = _unpack(t), _unpack(kernel), len(kernel.shape) - 1, len(t.shape)
+        strides = ((strides,) * n) if isinstance(strides, int) else strides
+        assert m >= n == len(strides)
+        # build shape and strides
+        x = conv.__stride(t, kernel.shape[1:], strides)
+        # reduce to matrix multiplication
+        flat_x = x.reshape(-1, np.prod(kernel.shape[1:]))
+        flat_w = kernel.reshape(kernel.shape[0], -1)
+        y = flat_x @ flat_w.T
+        # save for backward
+        ctx.save_for_backward(flat_x, flat_w, t.shape, kernel.shape, strides)
+        # reverse flatten for output
+        y = y.reshape(*x.shape[:-n], -1)
+        y = y.swapaxes(-n-1, -1).squeeze(-1)
+        return Tensor(y)
+
+    def backward(ctx, out_grad):
+        # preparation
+        out_grad = _unpack(out_grad)
+        flat_x, flat_w, in_shape, w_shape, strides = ctx.get_saved_tensors()
+
+        # flatten output gradient
+        n = len(w_shape) - 1
+        flat_out_grad = np.moveaxis(out_grad, -n, -1).reshape(-1, w_shape[0])
+        # dot product backward
+        flat_x_grad = flat_out_grad @ flat_w
+        flat_w_grad = flat_out_grad.T @ flat_x
+        # reshape kernel gradient
+        w_grad = flat_w_grad.reshape(w_shape)
+
+        # build input gradient
+        x_grad = np.zeros(in_shape)
+        # create windows of x-grad
+        x_grad_windows = conv.__stride(x_grad, w_shape[1:], strides)
+        out_x_grad_windows = flat_x_grad.reshape(x_grad_windows.shape)
+        # sum gradient of each kernel element one at a time
+        # to avoid overlaps during summation
+        skip_dims = tuple(slice(0, s) for s in x_grad_windows.shape[:-n])
+        # actually add gradients in blocks of size according to strides
+        # this leads to maximum non-overlapping blocks and thus minimal running time 
+        # also if dimensions of shape and kernel align then there is only one block in that dimension
+        strides = tuple(s if ks < d else d for s, ks, d in zip(strides, w_shape[1:], in_shape[-n:]))
+        strided_shape = tuple(ceil(ks/s) for ks, s in zip(w_shape, strides))
+        for idx in np.ndindex(strided_shape):
+            idx = skip_dims + tuple(slice(i*s, i*s+s) for i, s in zip(idx, strides))
+            x_grad_windows[idx] += out_x_grad_windows[idx]
+
+        # return gradient tensor
+        return Tensor(x_grad, requires_grad=False), Tensor(w_grad, requires_grad=False)
+
+@Tensor.register_op()
 class max_pool(Function):
     def forward(ctx, t, kernelsize:tuple=(2, 2)):
         a = _unpack(t)
         n, m = len(kernelsize), len(a.shape)
+        # cut input to match stride
+        in_shape = a.shape
+        cut_shape = a.shape[:-n] + tuple((d//s) * s for d, s in zip(a.shape[-n:], kernelsize))
+        a = a[tuple(slice(d) for d in cut_shape)]
         # split up pooling dimensions
         pooled_shape = sum(tuple((s//ks, ks) for s, ks in zip(a.shape[-n:], kernelsize)), tuple())
         p = a.reshape(a.shape[:-n] + pooled_shape)
@@ -348,17 +368,33 @@ class max_pool(Function):
         p = p.reshape(*flat_shape)
         # max pool and create mask for backward
         y = p.max(axis=0)
-        ctx.save_for_backward(p == y, kernelsize, a.shape)
+        ctx.save_for_backward(p == y, kernelsize, in_shape, cut_shape)
         # return tensor
         return Tensor(y)
     def backward(ctx, out_grad):
-        mask, kernelsize, shape = ctx.get_saved_tensors()
-        n, m = len(kernelsize), len(shape)
+        mask, kernelsize, in_shape, cut_shape = ctx.get_saved_tensors()
+        n, m = len(kernelsize), len(cut_shape)
         # build pooling gradient
         g = mask * np.expand_dims(_unpack(out_grad), 0).repeat(np.prod(kernelsize), axis=0)
         # backward pooling windows
         g = g.reshape(*kernelsize, *g.shape[1:])
         permut_idx = tuple(range(m-n,m)) + sum(((m+i, i) for i in range(n)), tuple())
-        g = g.transpose(*permut_idx).reshape(*shape)
+        g = g.transpose(*permut_idx).reshape(*cut_shape)
+        # pad to match input shape
+        g = np.pad(g, [(0, s-c) for s, c in zip(in_shape, cut_shape)])
         # return tensor
         return Tensor(g, requires_grad=False)
+
+@Tensor.register_op()
+class pad(Function):
+    def forward(ctx, t, padding:int, dims:tuple =(-2, -1), value:float =0.0):
+        ctx.save_for_backward(padding, dims)
+        pad_width = np.zeros((len(t.shape), 2), dtype=np.int32)
+        pad_width[dims, :] = padding
+        return Tensor(np.pad(_unpack(t), pad_width=pad_width.tolist(), constant_values=value))
+    def backward(ctx, out_grad):
+        p, dims = ctx.get_saved_tensors()
+        idx = list(slice(d) for d in out_grad.shape)
+        for i in dims:
+            idx[i] = slice(p, out_grad.shape[i] - p)
+        return out_grad[tuple(idx)]

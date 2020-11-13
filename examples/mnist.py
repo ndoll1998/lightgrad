@@ -13,13 +13,13 @@ from lightgrad.utils.data import MNIST_Train, MNIST_Test
 class CNN(nn.Module):
     def __init__(self):
         nn.Module.__init__(self)
-        self.c1 = nn.Conv2d(1, 2, kernelsize=5, bias=False)
-        self.c2 = nn.Conv2d(2, 4, kernelsize=3, bias=False)
-        self.l1 = nn.Linear(7 * 7 * 4, 10)
+        self.c1 = nn.Conv2d(1, 8, kernelsize=3, bias=False, pad=0)
+        self.c2 = nn.Conv2d(8, 16, kernelsize=3, bias=False, pad=0)
+        self.l1 = nn.Linear(5 * 5 * 16, 10)
     def forward(self, x):
-        y = self.c1(x).relu().max_pool()
-        y = self.c2(y).relu().max_pool()
-        y = self.l1(y.reshape(-1, 7 * 7 * 4))
+        y = self.c1(x).max_pool().relu()
+        y = self.c2(y).max_pool().relu()
+        y = self.l1(y.reshape(-1, 5 * 5 * 16))
         return y
 
 if __name__ == '__main__':
@@ -49,7 +49,6 @@ if __name__ == '__main__':
         # progress
         losses.append(l.data.item())
         pbar.set_postfix({'loss': sum(losses[-100:]) / min(100, len(losses))})
-        pbar.update(1)
 
     # evaluate model
     total_hits = 0

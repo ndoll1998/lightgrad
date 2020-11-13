@@ -45,9 +45,8 @@ class GradCheck(unittest.TestCase):
         self.unary_func(Tensor.sigmoid)
     def test_tanh(self):
         self.unary_func(Tensor.tanh)
-    # we use a gradient approximation for relu
-    # def test_relu(self):
-    #   self.unary_func(Tensor.relu, l=1, h=10)
+    def test_relu(self):
+      self.unary_func(Tensor.relu, l=1, h=10)
 
     """ Reductions/Selections """
     def test_max(self):

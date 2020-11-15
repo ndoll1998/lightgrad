@@ -35,7 +35,6 @@ if __name__ == '__main__':
     optim = AdaBelief(model.parameters(), lr=0.001)
 
     steps = 200
-
     # train model
     with Profiler:
         losses = []

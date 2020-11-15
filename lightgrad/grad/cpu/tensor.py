@@ -4,12 +4,10 @@ from ..tensor import Tensor
 class CpuTensor(Tensor):
 
     def __init__(self, data:np.ndarray, requires_grad:bool =True) -> None:
-        Tensor.__init__(self, requires_grad=requires_grad)
-        self.__data = data.data if isinstance(data, Tensor) else data
+        data = data.data if isinstance(data, Tensor) else data
+        assert not isinstance(data, Tensor)
+        Tensor.__init__(self, data=data, requires_grad=requires_grad)
 
-    @property
-    def data(self) -> np.ndarray:
-        return self.__data
     @property
     def dtype(self):
         return self.data.dtype

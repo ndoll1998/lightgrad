@@ -1,18 +1,26 @@
 from .grads import Gradients
 from .utils.profiler import Profiler
-from typing import Tuple, Union
+from typing import Tuple
 
 class __FunctionMeta(type):
-
     def __call__(cls, *args, **kwargs):
         # no tensors in kwargs
         assert all((not isinstance(t, Tensor) or not t.requires_grad for t in kwargs.values()))
         # create function/context instance
         f = object.__new__(cls)
         f.__init__(*args)
+        # check tensors
+        tensors = tuple(t for t in list(args) + list(kwargs.values()) if isinstance(t, Tensor))
+        tensor_type = tensors[0].__class__
+        assert all((isinstance(t, tensor_type) for t in tensors[1:])), "All Tensors must be of the same type!"
+        # unpack all tensors
+        if cls._unpack_tensors:
+            args = tuple(t.data if isinstance(t, Tensor) else t for t in args)
+            kwargs = {k: t.data if isinstance(t, Tensor) else t for k, t in kwargs.items()}
         # apply function
-        with Gradients.no_grad(), Profiler.profile(cls.__name__):
+        with Profiler.profile(cls.__name__):
             out_tensor = f.forward(*args, **kwargs)
+            out_tensor = tensor_type(out_tensor) if cls._unpack_tensors else out_tensor
             assert isinstance(out_tensor, Tensor)
         # set context of output tensor
         if Gradients._is_enabled():
@@ -21,7 +29,8 @@ class __FunctionMeta(type):
         return out_tensor
 
 class Function(object, metaclass=__FunctionMeta):
-
+    # unpack tensors before execution
+    _unpack_tensors = False 
     def __init__(self, *parents):
         self.__parents = parents
         self.__saved_for_backward = tuple()
@@ -33,11 +42,14 @@ class Function(object, metaclass=__FunctionMeta):
     def _set_children(self, *children):
         self.__children = children
     def _backpropagate(self, out_grad) -> Tuple["Tensor"]:
-        # get all gradients and propagate backwards
+        tensor_type = out_grad.__class__
+        # propagate backwards
         with Profiler.profile(self.__class__.__name__, backward=True):
-            in_grads = self.backward(out_grad)
-        in_grads = in_grads if isinstance(in_grads, tuple) else (in_grads,)
-        assert all((isinstance(t, Tensor) for t in in_grads if t is not None)), self.__class__.__name__
+            in_grads = self.backward(out_grad.data if self.__class__._unpack_tensors else out_grad)
+            in_grads = in_grads if isinstance(in_grads, tuple) else (in_grads,)
+        # create tensors
+        if self.__class__._unpack_tensors:
+            in_grads = tuple(tensor_type(data) for data in in_grads)
         # accumulate gradients in parent tensors
         for t, g in zip(self.__parents, in_grads):
             if isinstance(t, Tensor) and t.requires_grad:
@@ -57,9 +69,9 @@ class Function(object, metaclass=__FunctionMeta):
     def get_saved_tensors(self) -> Tuple["Tensor"]:
         return self.__saved_for_backward
 
-    def forward(ctx, t:"Tensor", *args, **kwargs) -> "Tensor":
+    def forward(ctx, t, *args, **kwargs):
         raise NotImplementedError()
-    def backward(ctx, out_grad:"Tensor") -> Union["Tensor", Tuple["Tensor"]]:
+    def backward(ctx, out_grad):
         raise RuntimeError("Cannot Backward through %s!" % ctx.__class__.__name__)
 
 from .tensor import Tensor

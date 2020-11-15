@@ -34,7 +34,6 @@ def numerical_jacobian(f, x:Tensor, eps=1e-4):
     # flatten all to get jacobian matrix dimensions
     ni = x.numel()
     nj = y.numel()
-    y = y.reshape(-1)
     # jacobian - use same tensor class as input
     NJ = x.__class__.empty((ni, nj), requires_grad=False)
     # fill jacobian

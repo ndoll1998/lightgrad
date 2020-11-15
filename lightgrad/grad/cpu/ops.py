@@ -4,7 +4,6 @@ from .tensor import CpuTensor as Tensor
 from math import ceil
 
 """ Helpers """
-_unpack = lambda t: t.data if isinstance(t, Tensor) else t
 
 def _bi_reverse(f):
     """ reverse inputs of bi-operator """
@@ -15,6 +14,10 @@ def _bi_reverse(f):
             return reversed(f.backward(out_grad))
     return F
 
+# always unpack tensors
+class Function(Function):
+    _unpack_tensors=True
+
 """ Transformations """
 
 @Tensor.register_op()
@@ -22,8 +25,7 @@ def _bi_reverse(f):
 class transpose(Function):
     def forward(ctx, a, *axes):
         ctx.save_for_backward(axes)
-        y = np.transpose(_unpack(a), axes=(axes if len(axes) > 0 else None))
-        return Tensor(y)
+        return np.transpose(a, axes=(axes if len(axes) > 0 else None))
     def backward(ctx, out_grad):
         axes, = ctx.get_saved_tensors()
         rev_axes = [None] * len(axes)
@@ -35,10 +37,10 @@ class transpose(Function):
 class reshape(Function):
     def forward(ctx, a, *shape):
         ctx.save_for_backward(a.shape)
-        return Tensor(_unpack(a).reshape(shape))
+        return a.reshape(shape)
     def backward(ctx, out_grad):
         shape, = ctx.get_saved_tensors()
-        return out_grad.reshape(*shape)
+        return out_grad.reshape(shape)
 
 
 """ Basic Math Operators """
@@ -47,7 +49,7 @@ class reshape(Function):
 @Tensor.register_op("__neg__")
 class neg(Function):
     def forward(ctx, a):
-        return Tensor(-_unpack(a))
+        return -a
     def backward(ctx, out_grad):
         return -out_grad
 
@@ -56,7 +58,7 @@ class neg(Function):
 @Tensor.register_op("__radd__")
 class add(Function):
     def forward(ctx, a, b):
-        return Tensor(_unpack(a) + _unpack(b))
+        return a + b
     def backward(ctx, out_grad):
         return out_grad, out_grad
 
@@ -64,7 +66,7 @@ class add(Function):
 @Tensor.register_op("__sub__")
 class sub(Function):
     def forward(ctx, a, b):
-        return Tensor(_unpack(a) - _unpack(b))
+        return a - b
     def backward(ctx, out_grad):
         return out_grad, -out_grad
 
@@ -74,7 +76,7 @@ class sub(Function):
 class mul(Function):
     def forward(ctx, a, b):
         ctx.save_for_backward(a, b)
-        return Tensor(_unpack(a) * _unpack(b))
+        return a * b
     def backward(ctx, out_grad):
         a, b = ctx.get_saved_tensors()
         return out_grad * b, a * out_grad
@@ -84,7 +86,7 @@ class mul(Function):
 class div(Function):
     def forward(ctx, a, b):
         ctx.save_for_backward(a, b)
-        return Tensor(_unpack(a) / _unpack(b))
+        return a / b
     def backward(ctx, out_grad):
         a, b = ctx.get_saved_tensors()
         return out_grad / b, -a / b**2 * out_grad
@@ -93,22 +95,22 @@ class div(Function):
 @Tensor.register_op("__pow__")
 class pow(Function):
     def forward(ctx, a, b):
-        y = Tensor(_unpack(a) ** _unpack(b))
+        y = a ** b
         ctx.save_for_backward(a, b, y)
         return y
     def backward(ctx, out_grad):
         a, b, y = ctx.get_saved_tensors()
-        return b * (a ** (b - 1)) * out_grad, out_grad * y * a.log()
+        return b * (a ** (b - 1)) * out_grad, out_grad * y * np.log(a)
 
 @Tensor.register_op()
 @Tensor.register_op("__matmul__")
 class dot(Function):
     def forward(ctx, a, b):
         ctx.save_for_backward(a, b)
-        return Tensor(_unpack(a) @ _unpack(b))
+        return a @ b
     def backward(ctx, out_grad):
         a, b = ctx.get_saved_tensors()
-        return out_grad @ b.T(), a.T() @ out_grad
+        return out_grad @ b.T, a.T @ out_grad
 
 # reverse operators for non-symmetrical operators
 Tensor.register_op("__rsub__", _bi_reverse(sub))
@@ -122,29 +124,25 @@ Tensor.register_op("__rmatmul__", _bi_reverse(dot))
 @Tensor.register_op("__iadd__")
 class __iadd(Function):
     def forward(ctx, t, other):
-        d = _unpack(t)
-        d += _unpack(other)
+        t += other
         return t
 
 @Tensor.register_op("__isub__")
 class __isub(Function):
     def forward(ctx, t, other):
-        d = _unpack(t)
-        d -= _unpack(other)
+        t -= other
         return t
 
 @Tensor.register_op("__imul__")
 class __imul(Function):
     def forward(ctx, t, other):
-        d = _unpack(t)
-        d *= _unpack(other)
+        t *= other
         return t
 
 @Tensor.register_op("__itruediv__")
 class __itruediv(Function):
     def forward(ctx, t, other):
-        d = _unpack(t)
-        d /= _unpack(other)
+        t /= other
         return t
 
 
@@ -154,24 +152,24 @@ class __itruediv(Function):
 class sin(Function):
     def forward(ctx, t):
         ctx.save_for_backward(t)
-        return Tensor(np.sin(_unpack(t)))
+        return np.sin(t)
     def backward(ctx, out_grad):
         t, = ctx.get_saved_tensors()
-        return t.cos() * out_grad
+        return np.cos(t) * out_grad
 
 @Tensor.register_op()
 class cos(Function):
     def forward(ctx, t):
         ctx.save_for_backward(t)
-        return Tensor(np.cos(_unpack(t)))
+        return np.cos(t)
     def backward(ctx, out_grad):
         t, = ctx.get_saved_tensors()
-        return -t.sin() * out_grad
+        return -np.sin(t) * out_grad
 
 @Tensor.register_op()
 class exp(Function):
     def forward(ctx, t):
-        y = Tensor(np.exp(_unpack(t)))
+        y = np.exp(t)
         ctx.save_for_backward(y)
         return y
     def backward(ctx, out_grad):
@@ -182,7 +180,7 @@ class exp(Function):
 class log(Function):
     def forward(ctx, t):
         ctx.save_for_backward(t)
-        return Tensor(np.log(_unpack(t)))
+        return np.log(t)
     def backward(ctx, out_grad):
         x, = ctx.get_saved_tensors()
         return (1 / x) * out_grad
@@ -190,7 +188,7 @@ class log(Function):
 @Tensor.register_op()
 class sigmoid(Function):
     def forward(ctx, t):
-        y = Tensor(1 / (1 + np.exp(-_unpack(t))))
+        y = 1 / (1 + np.exp(-t))
         ctx.save_for_backward(y)
         return y
     def backward(ctx, out_grad):
@@ -200,7 +198,7 @@ class sigmoid(Function):
 @Tensor.register_op()
 class tanh(Function):
     def forward(ctx, t):
-        y = Tensor(np.tanh(_unpack(t)))
+        y = np.tanh(t)
         ctx.save_for_backward(y)
         return y
     def backward(ctx, out_grad):
@@ -211,18 +209,17 @@ class tanh(Function):
 class relu(Function):
     def forward(ctx, t):
         ctx.save_for_backward(t)
-        return Tensor(np.maximum(_unpack(t), 0.0))
+        return np.maximum(t, 0.0)
     def backward(ctx, out_grad):
         t, = ctx.get_saved_tensors()
-        return Tensor(_unpack(out_grad) * (_unpack(t) >= 0))
+        return out_grad * (t >= 0)
         # return (1 + t.exp()).log() * out_grad
 
 @Tensor.register_op()
 class softmax(Function):
     def forward(ctx, t, dim:int =-1):
-        t = _unpack(t)
         exps = np.exp(t - np.max(t, axis=dim, keepdims=True))
-        return Tensor(exps / np.sum(exps, axis=dim, keepdims=True))
+        return exps / np.sum(exps, axis=dim, keepdims=True)
     # TODO: backward
 
 
@@ -231,9 +228,10 @@ class softmax(Function):
 @Tensor.register_op("__getitem__")
 class __getitem(Function):
     def forward(ctx, a, idx):
-        idx = tuple(_unpack(i) for i in idx) if isinstance(idx, tuple) else _unpack(idx)
+        if isinstance(idx, tuple):
+            idx = tuple(t.data if isinstance(t, Tensor) else t for t in idx)
         ctx.save_for_backward(a.shape, idx)
-        return Tensor(_unpack(a)[idx])
+        return a[idx]
     def backward(ctx, out_grad):
         shape, idx = ctx.get_saved_tensors()
         grad = Tensor.zeros(shape, requires_grad=False)
@@ -243,8 +241,9 @@ class __getitem(Function):
 @Tensor.register_op("__setitem__")
 class __setitem(Function):
     def forward(ctx, a, idx, val):
-        idx = tuple(_unpack(i) for i in idx) if isinstance(idx, tuple) else _unpack(idx)
-        _unpack(a)[idx] = _unpack(val)
+        if isinstance(idx, tuple):
+            idx = tuple(t.data if isinstance(t, Tensor) else t for t in idx)
+        a[idx] = val
         return a
 
 
@@ -253,10 +252,9 @@ class __setitem(Function):
 @Tensor.register_op()
 class max(Function):
     def forward(ctx, x, axis:int =-1):
-        x = _unpack(x)
         val = np.max(x, axis=axis)
         ctx.save_for_backward(x == val)
-        return Tensor(val)
+        return val
     def backward(ctx, out_grad):
         mask, = ctx.get_saved_tensors()
         return out_grad * mask
@@ -264,10 +262,9 @@ class max(Function):
 @Tensor.register_op()
 class min(Function):
     def forward(ctx, x, axis:int =-1):
-        x = _unpack(x)
         val = np.min(x, axis=axis)
         ctx.save_for_backward(x == val)
-        return Tensor(val)
+        return val
     def backward(ctx, out_grad):
         mask, = ctx.get_saved_tensors()
         return out_grad * mask
@@ -275,13 +272,13 @@ class min(Function):
 @Tensor.register_op()
 class mean(Function):
     def forward(ctx, t, *args, **kwargs):
-        return Tensor(_unpack(t).mean(*args, **kwargs))
+        return t.mean(*args, **kwargs)
     # TODO: backward
 
 @Tensor.register_op("sum")
 class _sum(Function):
     def forward(ctx, t, *args, **kwargs):
-        return Tensor(_unpack(t).sum(*args, **kwargs))
+        return t.sum(*args, **kwargs)
     # TODO: backward
 
 
@@ -298,7 +295,7 @@ class conv(Function):
 
     def forward(ctx, t, kernel, strides):
         # preparation
-        t, kernel, n, m = _unpack(t), _unpack(kernel), len(kernel.shape) - 1, len(t.shape)
+        n, m = len(kernel.shape) - 1, len(t.shape)
         strides = ((strides,) * n) if isinstance(strides, int) else strides
         assert m >= n == len(strides)
         # build shape and strides
@@ -312,11 +309,10 @@ class conv(Function):
         # reverse flatten for output
         y = y.reshape(*x.shape[:-n], -1)
         y = y.swapaxes(-n-1, -1).squeeze(-1)
-        return Tensor(y)
+        return y
 
     def backward(ctx, out_grad):
         # preparation
-        out_grad = _unpack(out_grad)
         flat_x, flat_w, in_shape, w_shape, strides = ctx.get_saved_tensors()
 
         # flatten output gradient
@@ -350,8 +346,7 @@ class conv(Function):
 
 @Tensor.register_op()
 class max_pool(Function):
-    def forward(ctx, t, kernelsize:tuple=(2, 2)):
-        a = _unpack(t)
+    def forward(ctx, a, kernelsize:tuple=(2, 2)):
         n, m = len(kernelsize), len(a.shape)
         # cut input to match stride
         in_shape = a.shape
@@ -375,7 +370,7 @@ class max_pool(Function):
         mask, kernelsize, in_shape, cut_shape = ctx.get_saved_tensors()
         n, m = len(kernelsize), len(cut_shape)
         # build pooling gradient
-        g = mask * np.expand_dims(_unpack(out_grad), 0).repeat(np.prod(kernelsize), axis=0)
+        g = mask * np.expand_dims(out_grad, 0).repeat(np.prod(kernelsize), axis=0)
         # backward pooling windows
         g = g.reshape(*kernelsize, *g.shape[1:])
         permut_idx = tuple(range(m-n,m)) + sum(((m+i, i) for i in range(n)), tuple())
@@ -391,7 +386,7 @@ class pad(Function):
         ctx.save_for_backward(padding, dims)
         pad_width = np.zeros((len(t.shape), 2), dtype=np.int32)
         pad_width[dims, :] = padding
-        return Tensor(np.pad(_unpack(t), pad_width=pad_width.tolist(), constant_values=value))
+        return np.pad(t, pad_width=pad_width.tolist(), constant_values=value)
     def backward(ctx, out_grad):
         p, dims = ctx.get_saved_tensors()
         idx = list(slice(d) for d in out_grad.shape)

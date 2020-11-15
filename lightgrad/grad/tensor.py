@@ -5,7 +5,8 @@ from collections import OrderedDict
 
 class Tensor(ABC):
 
-    def __init__(self, requires_grad:bool =True) -> None:
+    def __init__(self, data, requires_grad:bool =True) -> None:
+        self.__data = data
         # gradient information
         self.__grad = None
         self.__requires_grad = requires_grad
@@ -20,6 +21,9 @@ class Tensor(ABC):
         self.__ctx = None
         return self
 
+    @property
+    def data(self):
+        return self.__data
     @property
     def grad(self) -> "Tensor":
         return self.__grad

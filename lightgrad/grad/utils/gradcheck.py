@@ -1,6 +1,6 @@
 import numpy as np
-from .tensor import Tensor
-from .grads import Gradients
+from ..tensor import Tensor
+from ..grads import Gradients
 
 def jacobian(f, x:Tensor):
     # only allow tensor arguments for function

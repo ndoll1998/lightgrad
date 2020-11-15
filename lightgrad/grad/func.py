@@ -1,4 +1,5 @@
 from .grads import Gradients
+from .utils.profiler import Profiler
 from typing import Tuple, Union
 
 class __FunctionMeta(type):
@@ -10,7 +11,7 @@ class __FunctionMeta(type):
         f = object.__new__(cls)
         f.__init__(*args)
         # apply function
-        with Gradients.no_grad():
+        with Gradients.no_grad(), Profiler.profile(cls.__name__):
             out_tensor = f.forward(*args, **kwargs)
             assert isinstance(out_tensor, Tensor)
         # set context of output tensor
@@ -33,7 +34,8 @@ class Function(object, metaclass=__FunctionMeta):
         self.__children = children
     def _backpropagate(self, out_grad) -> Tuple["Tensor"]:
         # get all gradients and propagate backwards
-        in_grads = self.backward(out_grad)
+        with Profiler.profile(self.__class__.__name__, backward=True):
+            in_grads = self.backward(out_grad)
         in_grads = in_grads if isinstance(in_grads, tuple) else (in_grads,)
         assert all((isinstance(t, Tensor) for t in in_grads if t is not None)), self.__class__.__name__
         # accumulate gradients in parent tensors

@@ -10,6 +10,9 @@ from lightgrad.loss import cross_entropy
 from lightgrad.optim import AdaBelief
 from lightgrad.utils.data import MNIST_Train, MNIST_Test
 
+from lightgrad.grad import Tensor
+from lightgrad.grad.utils.profiler import Profiler
+
 class CNN(nn.Module):
     def __init__(self):
         nn.Module.__init__(self)
@@ -31,24 +34,29 @@ if __name__ == '__main__':
     model = CNN()
     optim = AdaBelief(model.parameters(), lr=0.001)
 
-    steps = 1000
+    steps = 200
+
     # train model
-    losses = []
-    for i in (pbar := trange(steps)):
-        # get a random data sample
-        idx = np.random.randint(0, mnist_train.n, size=128)
-        x, y_hat = mnist_train[idx]
-        x = x.reshape(-1, 1, 28, 28).detach()
-        # predict and compute error
-        y = model(x)
-        l = cross_entropy(y, y_hat)
-        # optimize
-        optim.zero_grad()
-        l.backward()
-        optim.step()
-        # progress
-        losses.append(l.data.item())
-        pbar.set_postfix({'loss': sum(losses[-100:]) / min(100, len(losses))})
+    with Profiler:
+        losses = []
+        for i in (pbar := trange(steps)):
+            # get a random data sample
+            idx = np.random.randint(0, mnist_train.n, size=128)
+            x, y_hat = mnist_train[idx]
+            x = x.reshape(-1, 1, 28, 28).detach()
+            # predict and compute error
+            y = model(x)
+            l = cross_entropy(y, y_hat)
+            # optimize
+            optim.zero_grad()
+            l.backward()
+            optim.step()
+            # progress
+            losses.append(l.data.item())
+            pbar.set_postfix({'loss': sum(losses[-100:]) / min(100, len(losses))})
+
+    print("Training Profiler")
+    Profiler.print()
 
     # evaluate model
     total_hits = 0

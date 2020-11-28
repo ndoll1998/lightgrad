@@ -34,6 +34,6 @@ class Profiler(object, metaclass=__ProfilerMeta):
         print(" Function       |   forward      \t|   backward   ")
         print("-"*70)
         for n in names:
-            print(" %-15s| %8.4f ms (%i)\t| %8.4f ms (%i) " % (
+            print(" %-15s| %8.4fs (%i)\t| %8.4fs (%i) " % (
                 n, Profiler.__ft[n], Profiler.__fc[n], Profiler.__bt[n], Profiler.__bc[n]))
         print("\n")

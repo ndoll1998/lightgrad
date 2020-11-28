@@ -13,14 +13,9 @@ class __FunctionMeta(type):
         tensors = tuple(t for t in list(args) + list(kwargs.values()) if isinstance(t, Tensor))
         tensor_type = tensors[0].__class__
         assert all((isinstance(t, tensor_type) for t in tensors[1:])), "All Tensors must be of the same type!"
-        # unpack all tensors
-        if cls._unpack_tensors:
-            args = tuple(t.data if isinstance(t, Tensor) else t for t in args)
-            kwargs = {k: t.data if isinstance(t, Tensor) else t for k, t in kwargs.items()}
         # apply function
         with Profiler.profile(cls.__name__):
             out_tensor = f.forward(*args, **kwargs)
-            out_tensor = tensor_type(out_tensor, dtype=out_tensor.dtype) if cls._unpack_tensors else out_tensor
             assert isinstance(out_tensor, Tensor)
         # set context of output tensor
         if Gradients._is_enabled():
@@ -29,8 +24,6 @@ class __FunctionMeta(type):
         return out_tensor
 
 class Function(object, metaclass=__FunctionMeta):
-    # unpack tensors before execution
-    _unpack_tensors = False 
     def __init__(self, *parents):
         self.__parents = parents
         self.__saved_for_backward = tuple()
@@ -45,11 +38,8 @@ class Function(object, metaclass=__FunctionMeta):
         tensor_type = out_grad.__class__
         # propagate backwards
         with Profiler.profile(self.__class__.__name__, backward=True):
-            in_grads = self.backward(out_grad.data if self.__class__._unpack_tensors else out_grad)
+            in_grads = self.backward(out_grad)
             in_grads = in_grads if isinstance(in_grads, tuple) else (in_grads,)
-        # create tensors
-        if self.__class__._unpack_tensors:
-            in_grads = tuple(tensor_type(data) for data in in_grads)
         # accumulate gradients in parent tensors
         for t, g in zip(self.__parents, in_grads):
             if isinstance(t, Tensor) and t.requires_grad:

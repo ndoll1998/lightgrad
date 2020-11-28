@@ -3,9 +3,17 @@ from ..tensor import Tensor
 
 class CpuTensor(Tensor):
 
-    def __init__(self, data:np.ndarray, requires_grad:bool =True) -> None:
-        data = data.data if isinstance(data, Tensor) else data
-        assert not isinstance(data, Tensor)
+    def __init__(self, data:np.ndarray, dtype:type =np.float32, requires_grad:bool =True) -> None:
+        # prepare data
+        if isinstance(data, CpuTensor):
+            data = data.data
+        if isinstance(data, np.ndarray):
+            if data.dtype != dtype:
+                data = data.astype(dtype)
+        else:
+            data = np.asarray(data, dtype=dtype)
+        # check data and initialize
+        assert isinstance(data, np.ndarray) and (data.dtype == dtype)
         Tensor.__init__(self, data=data, requires_grad=requires_grad)
 
     @property
@@ -19,21 +27,17 @@ class CpuTensor(Tensor):
         return self.data.item()
 
     @staticmethod
-    def empty(shape, requires_grad:bool =True) -> "CpuTensor":
-        data = np.empty(shape).astype(np.float32)
-        return CpuTensor(data, requires_grad=requires_grad)
+    def empty(shape, *args, **kwargs) -> "CpuTensor":
+        return CpuTensor(np.empty(shape), *args, **kwargs)
     @staticmethod
-    def zeros(shape, requires_grad:bool =True) -> "CpuTensor":
-        data = np.zeros(shape).astype(np.float32)
-        return CpuTensor(data, requires_grad=requires_grad)
+    def zeros(shape, *args, **kwargs) -> "CpuTensor":
+        return CpuTensor(np.zeros(shape), *args, **kwargs)
     @staticmethod
-    def ones(shape, requires_grad:bool =True) -> "CpuTensor":
-        data = np.ones(shape).astype(np.float32)
-        return CpuTensor(data, requires_grad=requires_grad)
+    def ones(shape, *args, **kwargs) -> "CpuTensor":
+        return CpuTensor(np.ones(shape), *args, **kwargs)
     @staticmethod
-    def uniform(low, high, shape, requires_grad:bool =True) -> "CpuTensor":
-        data = np.random.uniform(low, high, size=shape).astype(np.float32)
-        return CpuTensor(data, requires_grad=requires_grad)
+    def uniform(low, high, shape, *args, **kwargs) -> "CpuTensor":
+        return CpuTensor(np.random.uniform(low, high, size=shape), *args, **kwargs)
 
     def copy(self, requires_grad:bool =True) -> "CpuTensor":
         return CpuTensor(self.data.copy(), requires_grad=requires_grad)

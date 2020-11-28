@@ -20,7 +20,7 @@ class __FunctionMeta(type):
         # apply function
         with Profiler.profile(cls.__name__):
             out_tensor = f.forward(*args, **kwargs)
-            out_tensor = tensor_type(out_tensor) if cls._unpack_tensors else out_tensor
+            out_tensor = tensor_type(out_tensor, dtype=out_tensor.dtype) if cls._unpack_tensors else out_tensor
             assert isinstance(out_tensor, Tensor)
         # set context of output tensor
         if Gradients._is_enabled():

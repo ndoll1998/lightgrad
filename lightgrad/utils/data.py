@@ -50,14 +50,14 @@ class MNIST_Train(Dataset):
     def __init__(self, n:int =60_000, **kwargs):
         import gzip
         parse = lambda dat: np.frombuffer(gzip.decompress(dat), dtype=np.uint8)
-        X = Tensor(parse(_fetch("http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz"))[0x10:0x10 + n*28*28].astype(np.float32).reshape((-1, 28, 28)) / 255)
-        Y = Tensor(parse(_fetch("http://yann.lecun.com/exdb/mnist/train-labels-idx1-ubyte.gz"))[8:8+n].astype(np.int16))
+        X = Tensor(parse(_fetch("http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz"))[0x10:0x10 + n*28*28].reshape((-1, 28, 28)) / 255, requires_grad=False)
+        Y = Tensor(parse(_fetch("http://yann.lecun.com/exdb/mnist/train-labels-idx1-ubyte.gz"))[8:8+n], dtype=np.int16, requires_grad=False)
         Dataset.__init__(self, (X, Y), **kwargs)
 
 class MNIST_Test(Dataset):
     def __init__(self, n:int =10_000, **kwargs):
         import gzip
         parse = lambda dat: np.frombuffer(gzip.decompress(dat), dtype=np.uint8)
-        X = Tensor(parse(_fetch("http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz"))[0x10:0x10 + n*28*28].astype(np.float32).reshape((-1, 28, 28)) / 255)
-        Y = Tensor(parse(_fetch("http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz"))[8:8+n].astype(np.int16))
+        X = Tensor(parse(_fetch("http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz"))[0x10:0x10 + n*28*28].reshape((-1, 28, 28)) / 255, requires_grad=False)
+        Y = Tensor(parse(_fetch("http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz"))[8:8+n], dtype=np.int16, requires_grad=False)
         Dataset.__init__(self, (X, Y), **kwargs)

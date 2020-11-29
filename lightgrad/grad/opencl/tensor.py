@@ -11,9 +11,8 @@ class OpenCLTensor(Tensor):
         # initialize tensor
         assert isinstance(data, cl.Buffer)
         Tensor.__init__(self, data=data, requires_grad=requires_grad)
-        # preprocess dtype and shape
-        dtype = dtype() if isinstance(dtype, type) else dtype
-        n, m = abs(np.prod(shape)), data.size // dtype.nbytes
+        # prepare shape
+        n, m = abs(np.prod(shape)), data.size // dtype.itemsize
         shape = tuple(k if k != -1 else m // n for k in shape)
         assert np.prod(shape) == m
         # save shape,dtype and device
@@ -37,8 +36,13 @@ class OpenCLTensor(Tensor):
             device = OpenCLDevice.default_device() if cls._device is None else cls._device
         dtype = dtype() if isinstance(dtype, type) else dtype
         # create buffer and tensor - use device tensor type
-        buffer = cl.Buffer(device.ctx, cl.mem_flags.READ_WRITE, size=dtype.nbytes * np.prod(shape))
+        buffer = cl.Buffer(device.ctx, cl.mem_flags.READ_WRITE, size=dtype.itemsize * np.prod(shape))
         return device.Tensor(buffer, shape=shape, dtype=dtype, requires_grad=requires_grad)
+
+    @staticmethod
+    def from_numpy(a:np.ndarray, requires_grad:bool =True, device:"OpenCLDevice" =None) -> "OpenCLTensor":
+        buffer = cl.Buffer(device.ctx, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=a)
+        return device.Tensor(buffer, shape=a.shape, dtype=a.dtype, requires_grad=requires_grad)
 
     def numpy(self) -> np.ndarray:
         # copy buffer to numpy array

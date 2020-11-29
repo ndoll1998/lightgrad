@@ -39,7 +39,7 @@ def atom_kernel(operation_str:str, **named_tensors):
         # no shape broadcasting
         prg = cache_build_kernel(device.ctx, """
             __kernel void fn(""" + \
-                ', '.join(["const __global %s* %s," % (c, n.upper()) for n, c in zip(names, ctypes)]) + \
+                ' '.join(["const __global %s* %s," % (c, n.upper()) for n, c in zip(names, ctypes)]) + \
                 """
                 __global """ + out_ctype + """* Out
             ) {

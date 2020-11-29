@@ -12,7 +12,7 @@ class __FunctionMeta(type):
         # check tensors
         tensors = tuple(t for t in list(args) + list(kwargs.values()) if isinstance(t, Tensor))
         tensor_type = tensors[0].__class__
-        assert all((isinstance(t, tensor_type) for t in tensors[1:])), "All Tensors must be of the same type!"
+        assert all((isinstance(t, tensor_type) for t in tensors[1:])), "All Tensors must be of the same type! %s" % str(tuple(t.__class__.__name__ for t in tensors))
         # apply function
         with Profiler.profile(cls.__name__):
             out_tensor = f.forward(*args, **kwargs)

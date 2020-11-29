@@ -23,8 +23,13 @@ class OpenCLDevice(object):
     def __init__(self, context_or_deviceId:Union[int, cl.Context], device_type:int =cl.device_type.ALL):
         # create or find context
         if isinstance(context_or_deviceId, int):
-            # get device
+            # get device list and check if device is available
             device_list = sum((p.get_devices(device_type) for p in cl.get_platforms()), [])
+            if len(device_list) <= context_or_deviceId:
+                self.__tensor_type = None
+                self.__ctx = None
+                self.__queue = None
+                return
             device = device_list[context_or_deviceId]
             # find or create context
             if device in OpenCLDevice.__contexts:
@@ -53,14 +58,20 @@ class OpenCLDevice(object):
         self.__ctx = ctx
         self.__queue = queue
 
+    def is_available(self) -> bool:
+        return self.__ctx is not None
+
     @property
     def ctx(self) -> cl.Context:
+        assert self.is_available(), "Device is not available!"
         return self.__ctx
     @property
     def queue(self) -> cl.CommandQueue:
+        assert self.is_available(), "Device is not available!"
         return self.__queue
     @property
     def Tensor(self) -> type:
+        assert self.is_available(), "Device is not available!"
         return self.__tensor_type
 
     @staticmethod

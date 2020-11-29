@@ -24,7 +24,11 @@ class OpenCLDevice(object):
         # create or find context
         if isinstance(context_or_deviceId, int):
             # get device list and check if device is available
-            device_list = sum((p.get_devices(device_type) for p in cl.get_platforms()), [])
+            try:
+                # raises error when no platform is found
+                device_list = sum((p.get_devices(device_type) for p in cl.get_platforms()), [])
+            except:
+                device_list = []
             if len(device_list) <= context_or_deviceId:
                 self.__tensor_type = None
                 self.__ctx = None

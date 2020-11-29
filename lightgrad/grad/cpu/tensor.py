@@ -44,6 +44,10 @@ class CpuTensor(Tensor):
     def numpy(self) -> np.ndarray:
         return self.data
 
+    @staticmethod
+    def from_numpy(a:np.ndarray, requires_grad:bool =True) -> "CpuTensor":
+        return CpuTensor(data=a, requires_grad=requires_grad)
+
 # import operations to register them all
 # import at bottom to avoid circular import errors
 from . import ops

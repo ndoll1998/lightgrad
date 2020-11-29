@@ -1,9 +1,22 @@
 import numpy as np
-from abc import ABC
 from .grads import Gradients
 from collections import OrderedDict
 
-class Tensor(ABC):
+class _TensorType(type):
+
+    def __new__(cls, name, bases, attrs):
+        # create type
+        T = type.__new__(cls, name, bases, attrs)
+        # ignore abstract tensor type and types created during runtime
+        if ('__module__' in attrs) and (attrs['__module__'] != __name__):
+            # register a convert for the tensor type
+            backend_name = attrs['__module__'].split('.')[-2]
+            # create convert dispatcher
+            convert = lambda t, *args, **kwargs: T.from_numpy(t.numpy(), *args, **kwargs)
+            setattr(Tensor, backend_name, convert)
+        return T
+
+class Tensor(metaclass=_TensorType):
 
     def __init__(self, data, requires_grad:bool =True) -> None:
         self.__data = data
@@ -54,6 +67,9 @@ class Tensor(ABC):
         raise NotImplementedError()
     @staticmethod
     def uniform(low, high, shape, requires_grad:bool =True) -> "Tensor":
+        raise NotImplementedError()
+    @staticmethod
+    def from_numpy(a:np.ndarray, requires_grad:bool =True):
         raise NotImplementedError()
 
     @classmethod
@@ -130,4 +146,3 @@ class Tensor(ABC):
 
 # imports at bottom to avoid circular import errors
 from .func import Function
-from .cpu.tensor import CpuTensor

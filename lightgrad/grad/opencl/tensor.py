@@ -39,8 +39,12 @@ class OpenCLTensor(Tensor):
         buffer = cl.Buffer(device.ctx, cl.mem_flags.READ_WRITE, size=dtype.itemsize * np.prod(shape))
         return device.Tensor(buffer, shape=shape, dtype=dtype, requires_grad=requires_grad)
 
-    @staticmethod
-    def from_numpy(a:np.ndarray, requires_grad:bool =True, device:"OpenCLDevice" =None) -> "OpenCLTensor":
+    @classmethod
+    def from_numpy(cls, a:np.ndarray, requires_grad:bool =True, device:"OpenCLDevice" =None) -> "OpenCLTensor":
+        # get device
+        if device is None:
+            device = OpenCLDevice.default_device() if cls._device is None else cls._device
+        # create buffer and tensor
         buffer = cl.Buffer(device.ctx, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=a)
         return device.Tensor(buffer, shape=a.shape, dtype=a.dtype, requires_grad=requires_grad)
 

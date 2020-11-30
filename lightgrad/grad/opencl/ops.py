@@ -133,6 +133,17 @@ def atom_kernel(operation_str:str, out:str ="__OUT", **named_tensors):
         prg.fn(device.queue, [out_tensor.numel()], None, *datas, *shapes, np.int32(dims))
     return out_tensor
     
+""" Transformations """
+
+@OpenCLTensor.register_op()
+class reshape(Function):
+    def forward(ctx, a, *shape):
+        ctx.save_for_backward(a.shape)
+        return OpenCLTensor(a.data, shape=shape, dtype=a.dtype)
+    def backward(ctx, out_grad):
+        shape, = ctx.get_saved_tensors()
+        return out_grad.reshape(shape)
+
 """ Basic Math Operators """
 
 @OpenCLTensor.register_op()
@@ -237,3 +248,10 @@ class __idiv(Function):
             a=t, b=other, out='a',
             operation_str="A[i] /= b"
         )
+
+@OpenCLTensor.register_op()
+class fill(Function):
+    def forward(ctx, t, val):
+        val = np.asarray(val, dtype=t.dtype)
+        cl.enqueue_fill_buffer(t.device.queue, t.data, val, 0, t.data.size)
+        return t

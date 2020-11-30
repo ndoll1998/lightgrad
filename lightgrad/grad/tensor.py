@@ -122,7 +122,7 @@ class Tensor(metaclass=_TensorType):
             if self.grad is None:
                 self.__grad = self.__class__.zeros(self.shape, requires_grad=False)
             else:
-                self.__grad.data.fill(0)
+                self.__grad.fill(0)
         # recursivly clear gradients of all parents
         if zero_graph_grads and (self.__ctx is not None):
             for t in self.__ctx.parent_tensors:

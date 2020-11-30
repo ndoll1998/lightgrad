@@ -169,6 +169,13 @@ class __itruediv(Function):
         t /= other
         return t
 
+@CpuTensor.register_op()
+@_use_tensor_data
+class fill(Function):
+    def forward(ctx, t, val):
+        t.fill(val)
+        return t
+
 
 """ Non-Linearities """
 

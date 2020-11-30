@@ -40,6 +40,19 @@ class OpenCLTensor(Tensor):
         return device.Tensor(buffer, shape=shape, dtype=dtype, requires_grad=requires_grad)
 
     @classmethod
+    def zeros(cls, shape:tuple, dtype:type =np.float32, requires_grad:bool =True, device:"OpenCLDevice" =None) -> "OpenCLTensor":
+        return OpenCLTensor.empty(shape, dtype=dtype, requires_grad=requires_grad, device=device).fill(0)
+
+    @classmethod
+    def ones(cls, shape:tuple, dtype:type =np.float32, requires_grad:bool =True, device:"OpenCLDevice" =None) -> "OpenCLTensor":
+        return OpenCLTensor.empty(shape, dtype=dtype, requires_grad=requires_grad, device=device).fill(1)
+
+    @classmethod
+    def uniform(cls, low, high, shape:tuple, dtype:type =np.float32, requires_grad:bool =True, device:"OpenCLDevice" =None) -> "OpenCLDevice":
+        a = np.random.uniform(low, high, size=shape).astype(dtype)
+        return cls.from_numpy(a, requires_grad=requires_grad, device=device)
+
+    @classmethod
     def from_numpy(cls, a:np.ndarray, requires_grad:bool =True, device:"OpenCLDevice" =None) -> "OpenCLTensor":
         # get device
         if device is None:

@@ -1,20 +1,11 @@
 import numpy as np
 import pyopencl as cl
+from pyopencl.tools import dtype_to_ctype
 from ..func import Function
 from .tensor import OpenCLTensor
 import functools
 
 """ Helpers """
-
-DTYPE2CTYPE = {
-    # int
-    'int16': 'short',
-    'int32': 'int',
-    'int64': 'long',
-    # float
-    'float32': 'float',
-    'float64': 'double'
-}
 
 @functools.lru_cache()
 def cache_build_kernel(ctx, source):
@@ -73,7 +64,7 @@ def atom_kernel(operation_str:str, out:str ="__OUT", **named_tensors):
         names.append(name)
         tensors.append(t)
         datas.append(t.data)
-        ctypes.append(DTYPE2CTYPE[t.dtype.name])
+        ctypes.append(dtype_to_ctype(t.dtype))
     # is inplace if output is one of the inputs
     is_inplace = (out in names)
     # TODO: broadcast output dtype

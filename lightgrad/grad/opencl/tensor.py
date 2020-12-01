@@ -36,9 +36,6 @@ class OpenCLTensor(Tensor, metaclass=__OpenCLTensorType):
         self.__shape = tuple(shape)
         self.__strides = tuple(strides) if strides is not None else _get_strides(self.__shape)
         assert len(self.__shape) == len(self.__strides), "Shape and strides don't align!"
-        # create shapes and strides buffers
-        self.__shape_buf = cl.Buffer(self.__class__._device.ctx, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=np.asarray(self.__shape, dtype=np.uint32))
-        self.__strides_buf = cl.Buffer(self.__class__._device.ctx, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=np.asarray(self.__strides, dtype=np.uint32))
 
     @property
     def dtype(self):
@@ -47,14 +44,11 @@ class OpenCLTensor(Tensor, metaclass=__OpenCLTensorType):
     def shape(self) -> tuple:
         return self.__shape
     @property
+    def strides(self) -> tuple:
+        return self.__strides
+    @property
     def device(self):
         return self.__class__._device
-    @property
-    def _shape_buf(self) -> cl.Buffer:
-        return self.__shape_buf
-    @property
-    def _strides_buf(self) -> cl.Buffer:
-        return self.__strides_buf
 
     @classmethod
     def empty(cls, shape:tuple, dtype:type =np.float32, requires_grad:bool =True, device:"OpenCLDevice" =None) -> "OpenCLTensor":

@@ -81,7 +81,7 @@ class OpenCLDevice(object):
 
     @staticmethod
     def any(device_type:int =cl.device_type.ALL) -> "OpenCLDevice":
-        return OpenCLDevice(0, device_type=cl.device_type.ALL)
+        return OpenCLDevice(0, device_type=device_type)
 
     @staticmethod
     def default_device() -> "OpenCLDevice":

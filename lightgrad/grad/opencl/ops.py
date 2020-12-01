@@ -11,119 +11,104 @@ import functools
 def cache_build_kernel(ctx, source):
     return cl.Program(ctx, source).build()
 
-non_broadcast_atom_source = lambda operation_str, names, ctypes, out_tensor_id: """
-    __kernel void fn(\n\t""" + \
-        ', '.join(["__global %s* %s" % (c, n.upper()) for n, c in zip(names, ctypes)]) + \
-        """
-    ) {
-        const uint i = get_global_id(0);
-        """ + \
-        '\n\t'.join(["const %s %s = %s[i];" % (c, n.lower(), n.upper()) 
-            for i, (n, c) in enumerate(zip(names, ctypes)) if i != out_tensor_id]) + \
-        """           
-        """ + operation_str + """;
-    }
-"""
+@functools.lru_cache()
+def cache_build_atom_kernel(ctx, operation_str:str, names:tuple, ctypes:tuple, out_tensor_id:int):
+    assert len(names) == len(ctypes)
+    # build arguments
+    tensor_args = ["__global %(type)s* %(name)s" % {'type': c, 'name': n.upper()} for n, c in zip(names, ctypes)]    
+    shape_args = ["__global uint* %(name)s_shape" % {'name': n.upper()} for n in names]
+    stride_args = ["__global uint* %(name)s_strides" % {'name': n.upper()} for n in names]
+    dimension_args = ["uint %(name)s_dim" % {'name': n.upper()} for n in names]
+    # index initialize
+    idx_names = ["%(name)s_idx" % {'name': n.upper()} for n in names]
+    idx_init = "uint " + ', '.join(["%(idx_name)s = 0" % {'idx_name': n} for n in idx_names]) + ";"
 
-broadcast_atom_source = lambda operation_str, names, ctypes, out_tensor_id: """
-    __kernel void fn(
-        // tensors\n\t""" + \
-        ' '.join(["__global %s* %s," % (c, n.upper()) for n, c in zip(names, ctypes)]) + "\n\t" + \
-        ' '.join(["const __global uint* %s_shape," % n.upper() for n in names]) + "\n\t" + \
-        """ // others
-        const uint dims
-    ) {
-        uint size = get_global_size(0);
-        const uint i = get_global_id(0);
-        uint """ + \
-        ', '.join(['%s_idx = 0' % n.upper() for i, n in enumerate(names) if i != out_tensor_id]) + ";" +\
-        """
-        // get broadcasted flat index
-        for (int d=0; d < dims; d++) {
-            """ + "size /= %s_shape[d];" % names[out_tensor_id].upper() + """
-            """ + "const uint {0}_idx = (i / size) % {0}_shape[d];".format(names[out_tensor_id].upper()) + """
-            """ + \
-            ('\n\t' + " "*4).join(["{0}_idx = ({0}_idx * {0}_shape[d]) + ({1}_idx % {0}_shape[d]);".format(
-                n.upper(), names[out_tensor_id].upper()) for i, n in enumerate(names) if i != out_tensor_id]) + \
-            """
-        }
-        // gather elements by index and apply function
-        """ + \
-        '\n\t'.join(["const %s %s = %s[%s_idx];" % (c, n.lower(), n.upper(), n.upper()) 
-            for i, (c, n) in enumerate(zip(ctypes, names)) if i != out_tensor_id]) + \
-        """
-        """ + operation_str + """;
-    }
-"""
+    nl = '\n'
+    update_idx = lambda n, idx: f"""
+                diff = {names[out_tensor_id].upper()}_dim - {n.upper()}_dim;
+                if ((d >= diff) && ({n.upper()}_shape[d - diff] > 1))
+                    {idx} += k * {n.upper()}_strides[d - diff];
+    """
+    # build program source
+    source = f"""
+        __kernel void atom(
+            {', '.join(tensor_args)},
+            {', '.join(shape_args)},
+            {', '.join(stride_args)},
+            {', '.join(dimension_args)}
+        ) {{
+            // get worker information
+            uint size = get_global_size(0);
+            const uint i = get_global_id(0);            
+            // initialize array indices
+            {idx_init}
+            // get indices for tensors
+            for (int d=0; d < {names[out_tensor_id].upper()}_dim; ++d) {{
+                uint out_d = {names[out_tensor_id].upper()}_shape[d];
+                size /= out_d;
+
+                //const uint j = i / size;
+                //const uint l = j / out_d;   // this is what makes modulo slow
+                //const uint k = j - l * out_d;
+                const uint k = (i / size) % out_d;  // modulo is slow when influencing data accesses
+
+                // update array indices
+                uint diff; \
+                {''.join([update_idx(n, idx) for n, idx in zip(names, idx_names)])}
+            }}
+            // gather elements by indices
+            {
+                (nl+" "*12).join([
+                    f"const {t} {n} = {n.upper()}[{idx}];"
+                    for t, n, idx in zip(
+                        ctypes[:out_tensor_id] + ctypes[out_tensor_id+1:],
+                        names[:out_tensor_id] + names[out_tensor_id+1:], 
+                        idx_names[:out_tensor_id] + idx_names[out_tensor_id+1:]
+                    )
+                ])
+            }
+            // apply function
+            {ctypes[out_tensor_id]} {names[out_tensor_id]};
+            {operation_str};
+            // save output in tensor
+            {names[out_tensor_id].upper()}[{idx_names[out_tensor_id]}] = {names[out_tensor_id]};
+        }}
+    """
+    return cl.Program(ctx, source).build()
 
 def atom_kernel(operation_str:str, out:str ="__OUT", **named_tensors):
     # TODO: handle non tensor inputs
-    # populate inputs
-    names, tensors, datas, ctypes = [], [], [], []
-    for name, t in named_tensors.items():
-        names.append(name)
-        tensors.append(t)
-        datas.append(t.data)
-        ctypes.append(dtype_to_ctype(t.dtype))
-    # is inplace if output is one of the inputs
-    is_inplace = (out in names)
-    # TODO: broadcast output dtype
-    assert all((ctype == ctypes[0] for ctype in ctypes[1:]))
-    out_dtype = tensors[0].dtype
-    out_ctype = ctypes[0]
-    # get device to use - all tensors are of the same type and therfore also on the same device 
+    names = tuple(sorted(named_tensors))       # make sure the order is always the same to reduce compilations
+    tensors = tuple(named_tensors[n] for n in names)
+    ctypes = tuple(dtype_to_ctype(t.dtype) for t in tensors)
     device = tensors[0].device
-
-    # do tensors need broadcasting
-    broadcast = any((t.shape != tensors[0].shape for t in tensors[1:]))
-    # create output tensor
-    if broadcast:
-        # create broadcasted shape
-        dims = max([len(t.shape) for t in tensors])
-        shapes = []
-        for t in tensors:
-            shape = np.ones(dims, dtype=np.int32)
-            shape[-len(t.shape):] = t.shape
-            shapes.append(shape)
-        # create output shape
-        out_shape = np.maximum(*shapes)
-        assert all(np.all((s == 1) | (s == out_shape)) for s in shapes), "Shapes do not match!"
-        # only add to shapes if new output tensor will be created
-        if not is_inplace:
-            shapes.append(out_shape)
+    if out not in names:
+        # create output tensor 
+        # TODO: broadcast dtype
+        out_shape = np.maximum(*(t.shape for t in tensors))
+        out_tensor = device.Tensor.empty(out_shape, dtype=tensors[0].dtype)
+        # add output tensor
+        names += (out,)
+        tensors += (out_tensor,)
+        ctypes += (dtype_to_ctype(out_tensor.dtype),)
     else:
-        out_shape = tensors[0].shape
-
-    if not is_inplace:
-        # create output tensor
-        out_tensor_id = len(names)
-        out_tensor = OpenCLTensor.empty(out_shape, dtype=out_dtype, device=device)
-        # add output tensor to populated inputs
-        names.append(out)
-        tensors.append(out_tensor)
-        datas.append(out_tensor.data)
-        ctypes.append(out_ctype)
-
-    # get tensor to manipulate output
-    out_tensor_id = names.index(out)
-    out_tensor = tensors[out_tensor_id]
-
-    # build and execute program
-    if not broadcast:
-        # no shape broadcasting
-        source = non_broadcast_atom_source(operation_str, names, ctypes, out_tensor_id)
-        prg = cache_build_kernel(device.ctx, source)
-        # execute
-        prg.fn(device.queue, [out_tensor.numel()], None, *datas)
-    else:
-        # broadcast
-        source = broadcast_atom_source(operation_str, names, ctypes, out_tensor_id)
-        prg = cache_build_kernel(device.ctx, source)
-        # create shape tensors and apply function
-        shapes = [OpenCLTensor.from_numpy(s, requires_grad=False, device=device).data for s in shapes]
-        prg.fn(device.queue, [out_tensor.numel()], None, *datas, *shapes, np.int32(dims))
+        out_tensor = tensors[names.index(out)]
+    # broadcast shape checking
+    for t in tensors:
+        assert len(t.shape) <= len(out_tensor.shape)
+        assert np.all((np.asarray(t.shape) == 1) | (np.asarray(t.shape) == out_tensor.shape[-len(t.shape):]))
+    # collect all kernel inputs
+    datas = tuple(t.data for t in tensors)
+    shapes = tuple(t._shape_buf for t in tensors)
+    strides = tuple(t._strides_buf for t in tensors)
+    dims = tuple(np.int32(len(t.shape)) for t in tensors)
+    # build program and apply
+    prg = cache_build_atom_kernel(device.ctx, operation_str, names, ctypes, names.index(out))
+    prg.atom(device.queue, [out_tensor.numel()], None, *datas, *shapes, *strides, *dims)
+    device.queue.finish()
+    # return
     return out_tensor
-    
+
 """ Transformations """
 
 @OpenCLTensor.register_op()
@@ -143,7 +128,7 @@ class neg(Function):
     def forward(ctx, a):
         return atom_kernel(
             a=a, out="o",
-            operation_str="O[i] = -a"
+            operation_str="o = -a"
         )
     def backward(ctx, out_grad):
         return -out_grad
@@ -155,7 +140,7 @@ class add(Function):
     def forward(ctx, a, b):
         return atom_kernel(
             a=a, b=b, out="o",
-            operation_str="O[i] = a + b"
+            operation_str="o = a + b"
         )
     def backward(ctx, out_grad):
         return out_grad, out_grad
@@ -166,7 +151,7 @@ class sub(Function):
     def forward(ctx, a, b):
         return atom_kernel(
             a=a, b=b, out="o",
-            operation_str="O[i] = a - b"
+            operation_str="o = a - b"
         )
     def backward(ctx, out_grad):
         return out_grad, -out_grad
@@ -179,7 +164,7 @@ class mul(Function):
         ctx.save_for_backward(a, b)
         return atom_kernel(
             a=a, b=b, out="o",
-            operation_str="O[i] = a * b"
+            operation_str="o = a * b"
         )
     def backward(ctx, out_grad):
         a, b = ctx.get_saved_tensors()
@@ -192,7 +177,7 @@ class div(Function):
         ctx.save_for_backward(a, b)
         return atom_kernel(
             a=a, b=b, out="o",
-            operation_str="O[i] = a / b"
+            operation_str="o = a / b"
         )
     
 @OpenCLTensor.register_op()
@@ -202,7 +187,7 @@ class pow(Function):
         ctx.save_for_backward(a, b)
         return atom_kernel(
             a=a, b=b, out="o",
-            operation_str="O[i] = pow(a, b)"
+            operation_str="o = pow(a, b)"
         )
     
 
@@ -213,7 +198,7 @@ class __iadd(Function):
     def forward(ctx, t, other):
         return atom_kernel(
             a=t, b=other, out='a',
-            operation_str="A[i] += b"
+            operation_str="a += b"
         )
 
 @OpenCLTensor.register_op('__isub__')
@@ -221,7 +206,7 @@ class __isub(Function):
     def forward(ctx, t, other):
         return atom_kernel(
             a=t, b=other, out='a',
-            operation_str="A[i] -= b"
+            operation_str="a -= b"
         )
 
 @OpenCLTensor.register_op('__imul__')
@@ -229,7 +214,7 @@ class __imul(Function):
     def forward(ctx, t, other):
         return atom_kernel(
             a=t, b=other, out='a',
-            operation_str="A[i] *= b"
+            operation_str="a *= b"
         )
         
 @OpenCLTensor.register_op('__itruediv__')
@@ -237,7 +222,7 @@ class __idiv(Function):
     def forward(ctx, t, other):
         return atom_kernel(
             a=t, b=other, out='a',
-            operation_str="A[i] /= b"
+            operation_str="a /= b"
         )
 
 @OpenCLTensor.register_op()

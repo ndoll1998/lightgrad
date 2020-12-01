@@ -2,22 +2,43 @@ import numpy as np
 import pyopencl as cl
 from ..tensor import Tensor
 
-class OpenCLTensor(Tensor):
+def _get_strides(shape):
+    strides = np.ones(len(shape), dtype=np.int32)
+    for i, d in enumerate(shape[1:], 1):
+        strides[:-i] *= d
+    return tuple(strides)
+
+class __OpenCLTensorType(Tensor.__class__):
+    def __call__(cls, data:cl.Buffer, *args, **kwargs):
+        # use device tensor class from buffer context
+        cls = OpenCLDevice(data.context).Tensor
+        # create new tensor instance from arguments
+        t = object.__new__(cls)
+        t.__init__(data=data, *args, **kwargs)
+        return t
+
+class OpenCLTensor(Tensor, metaclass=__OpenCLTensorType):
     # opencl device to use
     # this is set by the device tensor types that inherit from this type (see device.py)
     _device = None
 
-    def __init__(self, data:cl.Buffer, shape:tuple =(-1,), dtype:type =np.float32, requires_grad:bool =True):
+    def __init__(self, data:cl.Buffer, shape:tuple =(-1,), strides:tuple =None, dtype:type =np.float32, requires_grad:bool =True):
         # initialize tensor
         assert isinstance(data, cl.Buffer)
         Tensor.__init__(self, data=data, requires_grad=requires_grad)
+        # save data type
+        self.__dtype = np.dtype(dtype)
         # prepare shape
-        n, m = abs(np.prod(shape)), data.size // dtype.itemsize
+        n, m = abs(np.prod(shape)), data.size // self.__dtype.itemsize
         shape = tuple(k if k != -1 else m // n for k in shape)
         assert np.prod(shape) == m
-        # save shape,dtype and device
-        self.__shape = shape
-        self.__dtype = dtype
+        # save shape and strides
+        self.__shape = tuple(shape)
+        self.__strides = tuple(strides) if strides is not None else _get_strides(self.__shape)
+        assert len(self.__shape) == len(self.__strides), "Shape and strides don't align!"
+        # create shapes and strides buffers
+        self.__shape_buf = cl.Buffer(self.__class__._device.ctx, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=np.asarray(self.__shape, dtype=np.uint32))
+        self.__strides_buf = cl.Buffer(self.__class__._device.ctx, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=np.asarray(self.__strides, dtype=np.uint32))
 
     @property
     def dtype(self):
@@ -28,13 +49,19 @@ class OpenCLTensor(Tensor):
     @property
     def device(self):
         return self.__class__._device
+    @property
+    def _shape_buf(self) -> cl.Buffer:
+        return self.__shape_buf
+    @property
+    def _strides_buf(self) -> cl.Buffer:
+        return self.__strides_buf
 
     @classmethod
     def empty(cls, shape:tuple, dtype:type =np.float32, requires_grad:bool =True, device:"OpenCLDevice" =None) -> "OpenCLTensor":
         # get device and prepare dtype
         if device is None:
             device = OpenCLDevice.default_device() if cls._device is None else cls._device
-        dtype = dtype() if isinstance(dtype, type) else dtype
+        dtype = np.dtype(dtype)
         # create buffer and tensor - use device tensor type
         buffer = cl.Buffer(device.ctx, cl.mem_flags.READ_WRITE, size=dtype.itemsize * np.prod(shape))
         return device.Tensor(buffer, shape=shape, dtype=dtype, requires_grad=requires_grad)
@@ -58,8 +85,10 @@ class OpenCLTensor(Tensor):
         if device is None:
             device = OpenCLDevice.default_device() if cls._device is None else cls._device
         # create buffer and tensor
+        shape, dtype = a.shape, a.dtype
+        strides = np.asarray(a.strides, dtype=np.uint32) // dtype.itemsize
         buffer = cl.Buffer(device.ctx, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=a)
-        return device.Tensor(buffer, shape=a.shape, dtype=a.dtype, requires_grad=requires_grad)
+        return device.Tensor(buffer, shape=shape, strides=strides, dtype=dtype, requires_grad=requires_grad)
 
     def numpy(self) -> np.ndarray:
         # copy buffer to numpy array

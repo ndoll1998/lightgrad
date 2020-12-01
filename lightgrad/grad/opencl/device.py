@@ -55,6 +55,7 @@ class OpenCLDevice(object):
             # We assume that the provided context was populated
             # and thus also queue and tensor-type
             ctx = context_or_deviceId
+            device = ctx.devices[0]
             queue = OpenCLDevice.__queues[device]
             tensor_type = OpenCLDevice.__tensor_types[device]
         # save context and queue

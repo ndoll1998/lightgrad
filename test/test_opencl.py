@@ -12,7 +12,7 @@ device = Device.any()
 if device.is_available():
     class Test_OpenCLTensor(unittest.TestCase):
 
-        def compare_unary_func(self, cpu_f, opencl_f, shape=(3, 3), l=-1, h=1, eps=1e-3, transpose=False):
+        def compare_unary_func(self, cpu_f, opencl_f, shape=(64, 64), l=-1, h=1, eps=1e-3, transpose=False):
             # create random numpy array
             a = np.random.uniform(l, h, size=shape)
             a = a if not transpose else a.T
@@ -25,7 +25,7 @@ if device.is_available():
             # compare outputs
             np.testing.assert_allclose(opencl_out, cpu_out, rtol=1e-5, atol=1e-5)
 
-        def compare_binary_func(self, cpu_f, opencl_f, a_shape=(3, 3), b_shape=(3, 3), l=-1, h=1, eps=1e-3, transpose=False):
+        def compare_binary_func(self, cpu_f, opencl_f, a_shape=(64, 64), b_shape=(64, 64), l=-1, h=1, eps=1e-3, transpose=False):
             # create random numpy arrays
             a = np.random.uniform(l, h, size=a_shape) if not transpose else np.random.uniform(l, h, size=a_shape).T
             b = np.random.uniform(l, h, size=b_shape) if not transpose else np.random.uniform(l, h, size=b_shape).T
@@ -48,12 +48,12 @@ if device.is_available():
         def test_atom_kernel_broadcast(self):
             from lightgrad.grad.opencl.ops import atom_kernel
             add_kernel = lambda a,b: atom_kernel(a=a, b=b, out='o', operation_str='o=a+b')
-            self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(3, 3), b_shape=(1, 3))
-            self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(3, 3), b_shape=(3, 1))
-            self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(1, 3), b_shape=(3, 3))
-            self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(3, 1), b_shape=(3, 3))
-            self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(3, 1), b_shape=(1, 3))
-            self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(1, 3), b_shape=(3, 1))
+            self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(64, 64), b_shape=(1, 64))
+            self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(64, 64), b_shape=(64, 1))
+            self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(1, 64), b_shape=(64, 64))
+            self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(64, 1), b_shape=(64, 64))
+            self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(64, 1), b_shape=(1, 64))
+            self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(1, 64), b_shape=(64, 1))
 
         def test_atom_kernel_strides(self):
             from lightgrad.grad.opencl.ops import atom_kernel
@@ -74,6 +74,10 @@ if device.is_available():
         """ unary operators """
         def test_neg(self):
             self.compare_unary_func(CpuTensor.neg, OpenCLTensor.neg)
+        def test_sigmoid(self):
+            self.compare_unary_func(CpuTensor.sigmoid, OpenCLTensor.sigmoid)
+        def test_relu(self):
+            self.compare_unary_func(CpuTensor.relu, OpenCLTensor.relu)
 
         """ Reductions/Selections """
             
@@ -87,6 +91,10 @@ if device.is_available():
         def test_div(self):
             self.compare_binary_func(CpuTensor.div, OpenCLTensor.div, l=0.1, h=10)
             self.compare_binary_func(CpuTensor.div, OpenCLTensor.div, l=-10, h=-0.1)
+        def test_dot(self):
+            self.compare_binary_func(CpuTensor.dot, OpenCLTensor.dot, a_shape=(64, 64), b_shape=(64, 64))
+            self.compare_binary_func(CpuTensor.dot, OpenCLTensor.dot, a_shape=(32, 64), b_shape=(128, 32), transpose=True)
+            self.compare_binary_func(CpuTensor.dot, OpenCLTensor.dot, a_shape=(13, 54), b_shape=(54, 76))
         def test_pow(self):
             self.compare_binary_func(CpuTensor.pow, OpenCLTensor.pow, l=0, h=1)
             

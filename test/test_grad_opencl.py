@@ -34,6 +34,10 @@ if device.is_available():
         """ unary operators """
         def test_neg(self):
             self.unary_func(OpenCLTensor.neg)
+        def test_sigmoid(self):
+            self.unary_func(OpenCLTensor.sigmoid)
+        def test_relu(self):
+            self.unary_func(OpenCLTensor.relu)
 
         """ Reductions/Selections """
             
@@ -52,6 +56,9 @@ if device.is_available():
             self.simple_binary_func(OpenCLTensor.div, l=-10, h=-0.1, transpose=False)  # also check for negatives
             self.simple_binary_func(OpenCLTensor.div, l=0.1, h=10, transpose=True)    # check positive values
             self.simple_binary_func(OpenCLTensor.div, l=-10, h=-0.1, transpose=True)  # also check for negatives
+        def test_dot(self):
+            self.simple_binary_func(OpenCLTensor.dot, a_shape=(16, 16), b_shape=(16, 16))
+            self.simple_binary_func(OpenCLTensor.dot, a_shape=(32, 128), b_shape=(64, 32), transpose=True)
         def test_pow(self):
             self.simple_binary_func(OpenCLTensor.pow, l=0, h=1, transpose=False)
             self.simple_binary_func(OpenCLTensor.pow, l=0, h=1, transpose=True)

@@ -1,10 +1,8 @@
 import numpy as np
 import pyopencl as cl
-from pyopencl.tools import dtype_to_ctype
 from ..func import Function
-from ..grads import Gradients
 from .tensor import OpenCLTensor
-import functools
+from .kernels import atom_kernel, dot_kernel
 
 """ Helpers """
 
@@ -16,126 +14,6 @@ def _bi_reverse(f):
         def backward(ctx, out_grad):
             return reversed(f.backward(out_grad))
     return F
-
-@functools.lru_cache()
-def cache_build_kernel(ctx, source):
-    return cl.Program(ctx, source).build()
-
-@functools.lru_cache()
-def cache_build_atom_kernel(ctx, operation_str:str, names:tuple, ctypes:tuple, out_tensor_id:int, use_strides:bool):
-    assert len(names) == len(ctypes)
-    # build arguments
-    tensor_args = ["__global %(type)s* %(name)s" % {'type': c, 'name': n.upper()} for n, c in zip(names, ctypes)]    
-
-    nl = '\n'
-    if use_strides:
-        # build kernel arguments
-        stride_args = ["__global uint* %(name)s_strides" % {'name': n.upper()} for n in names]
-        stride_args = f""",
-            {', '.join(stride_args)},
-            __global const uint* shape,
-            const uint dim
-        """
-        # index initialize
-        idxs = ["%(name)s_idx" % {'name': n.upper()} for n in names]
-        idx_init = "uint " + ', '.join(["%(idx_name)s = 0" % {'idx_name': n} for n in idxs]) + ";"
-        # strided index calculation source code
-        build_indices_source = f"""{idx_init}
-            uint size = get_global_size(0);
-            // get indices for tensors
-            for (int d=0; d < dim; ++d) {{
-                size /= shape[d];
-                uint j = (i / size) % shape[d];
-                // update array indices
-                {(nl + " "*16).join([
-                    f"{idx} += j * {n.upper()}_strides[d];"
-                    for n, idx in zip(names, idxs)
-                ])}
-            }}
-        """
-    else:
-        # use global id as a index for all tensors
-        idxs = "i"*len(names)
-
-    # build program source
-    source = f"""
-        __kernel void atom(
-            {', '.join(tensor_args)}{stride_args if use_strides else ""}
-        ) {{
-            // get worker information
-            const uint i = get_global_id(0);
-            // build strided indices if we need them
-            {build_indices_source if use_strides else ""}
-            // gather elements by indices
-            {(nl+" "*12).join([
-                f"const {t} {n} = {n.upper()}[{idx}];"
-                for t, n, idx in zip(
-                    ctypes[:out_tensor_id] + ctypes[out_tensor_id+1:],
-                    names[:out_tensor_id] + names[out_tensor_id+1:], 
-                    idxs[:out_tensor_id] + idxs[out_tensor_id+1:]
-                )
-            ])}
-            // apply function
-            {ctypes[out_tensor_id]} {names[out_tensor_id]};
-            {operation_str};
-            // save output in tensor
-            {names[out_tensor_id].upper()}[{idxs[out_tensor_id]}] = {names[out_tensor_id]};
-        }}
-    """
-    return cl.Program(ctx, source).build()
-
-def atom_kernel(operation_str:str, out:str ="__OUT", **named_tensors):
-    # TODO: handle non tensor inputs
-    names = tuple(sorted(named_tensors))       # make sure the order is always the same to reduce compilations
-    tensors = tuple(named_tensors[n] for n in names)
-    ctypes = tuple(dtype_to_ctype(t.dtype) for t in tensors)
-    device = tensors[0].device
-    # broadcast shapes
-    dim = max([len(t.shape) for t in tensors])
-    shapes = []
-    for t in tensors:
-        shape = np.ones(dim, dtype=np.int32)
-        shape[-len(t.shape):] = t.shape
-        shapes.append(shape)
-    shape = np.maximum(*shapes) if len(shapes) > 1 else shapes[0]
-    assert all([np.all((s == 1) | (s == shape)) for s in shapes]), "Cannot broadcast shapes!"
-    # create output tensor
-    if out not in names:
-        # TODO: broadcast dtype
-        out_dtype = tensors[0].dtype
-        out_tensor = device.Tensor.empty(shape, dtype=out_dtype)
-        # add output tensor
-        names += (out,)
-        tensors += (out_tensor,)
-        shapes += (shape,)
-        ctypes += (dtype_to_ctype(out_dtype),)
-    else:
-        out_tensor = tensors[names.index(out)]
-    # broadcast strides
-    all_strides = []
-    for t, s in zip(tensors, shapes):
-        k = len(t.shape)
-        strides = np.zeros(dim, dtype=np.int32)
-        mask = (s[-k:] == shape[-k:])
-        strides[-k:][mask] = np.asarray(t.strides, dtype=np.int32)[mask]
-        all_strides.append(strides)
-    # collect data buffers
-    datas = tuple(t.data for t in tensors)
-    # check if strides are necessary
-    if any((st1 != st2).any() for st1, st2 in zip(all_strides[1:], all_strides[:-1])):
-        # build kernel input buffers
-        shape = cl.Buffer(device.ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=shape)
-        strides = tuple(cl.Buffer(device.ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=st) for st in all_strides)
-        # build program and apply
-        prg = cache_build_atom_kernel(device.ctx, operation_str, names, ctypes, names.index(out), use_strides=True)
-        prg.atom(device.queue, [out_tensor.numel()], None, *datas, *strides, shape, np.int32(dim))
-    else:
-        # build program and apply
-        prg = cache_build_atom_kernel(device.ctx, operation_str, names, ctypes, names.index(out), use_strides=False)
-        prg.atom(device.queue, [out_tensor.numel()], None, *datas)
-    # wait until operation is finished
-    device.queue.finish()
-    return out_tensor
 
 """ Transformations """
 
@@ -168,7 +46,6 @@ class contiguous(Function):
 
 @OpenCLTensor.register_op()
 class reshape(Function):
-    @Gradients.no_grad()
     def forward(ctx, a, *shape):
         ctx.save_for_backward(a.shape)
         return OpenCLTensor(a.contiguous().data, shape=shape, dtype=a.dtype)
@@ -257,11 +134,23 @@ class pow(Function):
         b_grad = atom_kernel(g=out_grad, a=a, y=y, out='o', operation_str='o = g * y * log(a)')
         return a_grad, b_grad
 
+@OpenCLTensor.register_op()
+@OpenCLTensor.register_op("__matmul__")
+class dot(Function):
+    def forward(ctx, a, b):
+        ctx.save_for_backward(a, b)
+        return dot_kernel(a, b)    
+    def backward(ctx, out_grad):
+        a, b = ctx.get_saved_tensors()
+        a_grad = dot_kernel(out_grad, b.transpose(1, 0))
+        b_grad = dot_kernel(a.transpose(1, 0), out_grad)
+        return a_grad, b_grad   
+
 # reverse operators for non-symmetrical operators
 OpenCLTensor.register_op("__rsub__", _bi_reverse(sub))
 OpenCLTensor.register_op("__rtruediv__", _bi_reverse(div))
 OpenCLTensor.register_op("__rpow__", _bi_reverse(pow))
-# OpenCLTensor.register_op("__rmatmul__", _bi_reverse(dot))
+OpenCLTensor.register_op("__rmatmul__", _bi_reverse(dot))
 
 """ Inplace Operators """
 
@@ -305,6 +194,37 @@ class fill(Function):
         return t
 
 """ Non-Linearities """
+
+@OpenCLTensor.register_op()
+class sigmoid(Function):
+    def forward(ctx, t):
+        y = atom_kernel(
+            t=t, out='o',
+            operation_str='o = 1 / (1 + exp(-t))'
+        )
+        ctx.save_for_backward(y)
+        return y
+    def backward(ctx, out_grad):
+        y, = ctx.get_saved_tensors()
+        return atom_kernel(
+            y=y, g=out_grad, out='o',
+            operation_str='o = y * (1-y) * g'
+        )
+
+@OpenCLTensor.register_op()
+class relu(Function):
+    def forward(ctx, t):
+        ctx.save_for_backward(t)
+        return atom_kernel(
+            t=t, out='o',
+            operation_str='o = (t>=0)? t : 0'
+        )
+    def backward(ctx, out_grad):
+        t, = ctx.get_saved_tensors()
+        return atom_kernel(
+            t=t, g=out_grad, out='o',
+            operation_str='o = (t>=0)? g : 0'
+        )
 
 """ Selectors """
 

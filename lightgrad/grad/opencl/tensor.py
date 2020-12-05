@@ -23,7 +23,6 @@ class OpenCLTensor(Tensor, metaclass=__OpenCLTensorType):
     _device = None
 
     def __init__(self, data:cl.Buffer, shape:tuple =(-1,), strides:tuple =None, dtype:type =np.float32, requires_grad:bool =True):
-        assert all(isinstance(s, (int, np.int32)) for s in shape), ([type(s) for s in shape], shape)
         # initialize tensor
         assert isinstance(data, cl.Buffer)
         Tensor.__init__(self, data=data, requires_grad=requires_grad)

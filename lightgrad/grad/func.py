@@ -14,7 +14,7 @@ class __FunctionMeta(type):
         tensor_type = tensors[0].__class__
         assert all((isinstance(t, tensor_type) for t in tensors[1:])), "All Tensors must be of the same type! %s" % str(tuple(t.__class__.__name__ for t in tensors))
         # apply function
-        with Profiler.profile(cls.__name__):
+        with Profiler.profile(cls.__name__), Gradients.no_grad():
             out_tensor = f.forward(*args, **kwargs)
             assert isinstance(out_tensor, Tensor)
         # set context of output tensor

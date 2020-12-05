@@ -25,6 +25,6 @@ class Gradients(object):
     def _is_enabled() -> bool:
         return Gradients.__DISABLE_DEPTH == 0
     @staticmethod
-    def no_grad(fn=None):
+    def no_grad():
         return Gradients.__DisableHandler()
 

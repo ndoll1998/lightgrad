@@ -5,7 +5,7 @@ from ..tensor import Tensor
 def _get_strides(shape):
     strides = np.ones(len(shape), dtype=np.int32)
     for i, d in enumerate(shape[1:], 1):
-        strides[:-i] *= d
+        strides[:i] *= d
     return tuple(strides)
 
 class __OpenCLTensorType(Tensor.__class__):
@@ -23,6 +23,7 @@ class OpenCLTensor(Tensor, metaclass=__OpenCLTensorType):
     _device = None
 
     def __init__(self, data:cl.Buffer, shape:tuple =(-1,), strides:tuple =None, dtype:type =np.float32, requires_grad:bool =True):
+        assert all(isinstance(s, (int, np.int32)) for s in shape), ([type(s) for s in shape], shape)
         # initialize tensor
         assert isinstance(data, cl.Buffer)
         Tensor.__init__(self, data=data, requires_grad=requires_grad)
@@ -47,8 +48,14 @@ class OpenCLTensor(Tensor, metaclass=__OpenCLTensorType):
     def strides(self) -> tuple:
         return self.__strides
     @property
-    def device(self):
+    def device(self) -> "OpenCLDevice":
         return self.__class__._device
+
+    @property
+    def is_contiguous(self) -> bool:
+        shape = np.asarray(self.shape, dtype=np.int32)
+        strides = np.asarray(self.strides, dtype=np.int32)
+        return (strides[:-1] == strides[1:] * shape[1:]).all()
 
     @classmethod
     def empty(cls, shape:tuple, dtype:type =np.float32, requires_grad:bool =True, device:"OpenCLDevice" =None) -> "OpenCLTensor":
@@ -57,7 +64,7 @@ class OpenCLTensor(Tensor, metaclass=__OpenCLTensorType):
             device = OpenCLDevice.default_device() if cls._device is None else cls._device
         dtype = np.dtype(dtype)
         # create buffer and tensor - use device tensor type
-        buffer = cl.Buffer(device.ctx, cl.mem_flags.READ_WRITE, size=dtype.itemsize * np.prod(shape))
+        buffer = cl.Buffer(device.ctx, cl.mem_flags.READ_WRITE, size=int(dtype.itemsize * np.prod(shape)))
         return device.Tensor(buffer, shape=shape, dtype=dtype, requires_grad=requires_grad)
 
     @classmethod
@@ -81,14 +88,29 @@ class OpenCLTensor(Tensor, metaclass=__OpenCLTensorType):
         # create buffer and tensor
         shape, dtype = a.shape, a.dtype
         strides = np.asarray(a.strides, dtype=np.uint32) // dtype.itemsize
-        buffer = cl.Buffer(device.ctx, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=a)
+        # make array contiguous for buffer
+        a.strides = np.asarray(_get_strides(shape)) * dtype.itemsize
+        buffer = cl.Buffer(device.ctx, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=a.data)
+        a.strides = strides * dtype.itemsize
+        # create tensor
         return device.Tensor(buffer, shape=shape, strides=strides, dtype=dtype, requires_grad=requires_grad)
 
+    def copy(self, requires_grad:bool =True) -> "OpenCLTensor":
+        if self.is_contiguous:
+            o = self.device.Tensor.empty(self.shape, dtype=self.dtype, requires_grad=requires_grad)
+            cl.enqueue_copy(self.device.queue, o.data, self.data)
+        else:
+            # create contiguous copy of self
+            o = self.contiguous()
+        return o
+
     def numpy(self) -> np.ndarray:
-        # copy buffer to numpy array
         data = np.empty(self.shape, dtype=self.dtype)
+        data.strides = np.asarray(self.strides) * self.dtype.itemsize
+        # copy buffer to numpy array
         cl.enqueue_copy(self.device.queue, data, self.data)
         self.device.queue.finish()
+        # set strides
         return data
 
 from .device import OpenCLDevice

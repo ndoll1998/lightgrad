@@ -116,7 +116,7 @@ class Tensor(metaclass=_TensorType):
             else:
                 self.__grad += grad
 
-    def zero_grad(self, zero_graph_grads:bool =False) -> None:
+    def zero_grad(self, graph_traverse:bool =False) -> None:
         # clear my gradient
         if self.requires_grad:
             if self.grad is None:
@@ -124,9 +124,10 @@ class Tensor(metaclass=_TensorType):
             else:
                 self.__grad.fill(0)
         # recursivly clear gradients of all parents
-        if zero_graph_grads and (self.__ctx is not None):
+        if graph_traverse and (self.__ctx is not None):
+            assert self not in self.__ctx.parent_tensors
             for t in self.__ctx.parent_tensors:
-                t.zero_grad(zero_graph_grads=True)
+                t.zero_grad(graph_traverse=True)
 
     @classmethod
     def register_op(cls, name:str =None, op:type =None):

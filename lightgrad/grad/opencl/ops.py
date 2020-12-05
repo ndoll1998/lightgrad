@@ -2,10 +2,20 @@ import numpy as np
 import pyopencl as cl
 from pyopencl.tools import dtype_to_ctype
 from ..func import Function
+from ..grads import Gradients
 from .tensor import OpenCLTensor
 import functools
 
 """ Helpers """
+
+def _bi_reverse(f):
+    """ reverse inputs of bi-operator """
+    class F(f):
+        def forward(ctx, a, b):
+            return f.forward(ctx, b, a)
+        def backward(ctx, out_grad):
+            return reversed(f.backward(out_grad))
+    return F
 
 @functools.lru_cache()
 def cache_build_kernel(ctx, source):
@@ -31,10 +41,11 @@ def cache_build_atom_kernel(ctx, operation_str:str, names:tuple, ctypes:tuple, o
         idx_init = "uint " + ', '.join(["%(idx_name)s = 0" % {'idx_name': n} for n in idxs]) + ";"
         # strided index calculation source code
         build_indices_source = f"""{idx_init}
+            uint size = get_global_size(0);
             // get indices for tensors
             for (int d=0; d < dim; ++d) {{
                 size /= shape[d];
-                uint j = (i / size) % shape[d]; // futher computations with j are unbelievably slow
+                uint j = (i / size) % shape[d];
                 // update array indices
                 {(nl + " "*16).join([
                     f"{idx} += j * {n.upper()}_strides[d];"
@@ -52,7 +63,6 @@ def cache_build_atom_kernel(ctx, operation_str:str, names:tuple, ctypes:tuple, o
             {', '.join(tensor_args)}{stride_args if use_strides else ""}
         ) {{
             // get worker information
-            uint size = get_global_size(0);
             const uint i = get_global_id(0);
             // build strided indices if we need them
             {build_indices_source if use_strides else ""}
@@ -130,13 +140,41 @@ def atom_kernel(operation_str:str, out:str ="__OUT", **named_tensors):
 """ Transformations """
 
 @OpenCLTensor.register_op()
+class transpose(Function):
+    def forward(ctx, a, *axes):
+        assert len(axes) == len(a.shape)
+        ctx.save_for_backward(axes)
+        shape = tuple(a.shape[i] for i in axes)
+        strides = tuple(a.strides[i] for i in axes)
+        return OpenCLTensor(a.data, shape=shape, strides=strides, dtype=a.dtype)
+    def backward(ctx, out_grad):
+        axes, = ctx.get_saved_tensors()
+        rev_axes = [None] * len(axes)
+        for i, j in enumerate(axes):
+            rev_axes[j] = i
+        return out_grad.transpose(*rev_axes)
+
+@OpenCLTensor.register_op()
+class contiguous(Function):
+    def forward(ctx, a):
+        if not a.is_contiguous:
+            return atom_kernel(
+                a=a, out='o',
+                operation_str='o = a'
+            )
+        return a
+    def backward(ctx, out_grad):
+        return out_grad
+
+@OpenCLTensor.register_op()
 class reshape(Function):
+    @Gradients.no_grad()
     def forward(ctx, a, *shape):
         ctx.save_for_backward(a.shape)
-        return OpenCLTensor(a.data, shape=shape, dtype=a.dtype)
+        return OpenCLTensor(a.contiguous().data, shape=shape, dtype=a.dtype)
     def backward(ctx, out_grad):
         shape, = ctx.get_saved_tensors()
-        return out_grad.reshape(shape)
+        return out_grad.reshape(*shape)
 
 """ Basic Math Operators """
 
@@ -197,17 +235,33 @@ class div(Function):
             a=a, b=b, out="o",
             operation_str="o = a / b"
         )
-    
+    def backward(ctx, out_grad):
+        a, b = ctx.get_saved_tensors()
+        a_grad = atom_kernel(g=out_grad, b=b, out='o', operation_str='o = g / b')
+        b_grad = atom_kernel(g=out_grad, a=a, b=b, out='o', operation_str='o = -a / pow(b, 2) * g')
+        return a_grad, b_grad
+
 @OpenCLTensor.register_op()
 @OpenCLTensor.register_op("__pow__")
 class pow(Function):
     def forward(ctx, a, b):
-        ctx.save_for_backward(a, b)
-        return atom_kernel(
+        y = atom_kernel(
             a=a, b=b, out="o",
             operation_str="o = pow(a, b)"
         )
-    
+        ctx.save_for_backward(a, b, y)
+        return y
+    def backward(ctx, out_grad):
+        a, b, y = ctx.get_saved_tensors()
+        a_grad = atom_kernel(g=out_grad, a=a, b=b, out='o', operation_str='o = b * pow(a, b-1) * g')
+        b_grad = atom_kernel(g=out_grad, a=a, y=y, out='o', operation_str='o = g * y * log(a)')
+        return a_grad, b_grad
+
+# reverse operators for non-symmetrical operators
+OpenCLTensor.register_op("__rsub__", _bi_reverse(sub))
+OpenCLTensor.register_op("__rtruediv__", _bi_reverse(div))
+OpenCLTensor.register_op("__rpow__", _bi_reverse(pow))
+# OpenCLTensor.register_op("__rmatmul__", _bi_reverse(dot))
 
 """ Inplace Operators """
 
@@ -249,3 +303,39 @@ class fill(Function):
         val = np.asarray(val, dtype=t.dtype)
         cl.enqueue_fill_buffer(t.device.queue, t.data, val, 0, t.data.size)
         return t
+
+""" Non-Linearities """
+
+""" Selectors """
+
+@OpenCLTensor.register_op("__getitem__")
+class __getitem(Function):
+    """ TODO: currently only supports direct item indexing (no slicing or masking). """
+    def forward(ctx, a, idx):
+        idx = (idx,) if isinstance(idx, int) else idx
+        assert len(idx) == len(a.shape)
+        idx = np.asarray(idx, dtype=np.int32)
+        ctx.save_for_backward(a.shape, idx)
+        off = (idx * a.strides).sum() * a.dtype.itemsize
+        return OpenCLTensor(a.data[off:off+a.dtype.itemsize], shape=tuple(), dtype=a.dtype)
+    def backward(ctx, out_grad):
+        shape, idx = ctx.get_saved_tensors()
+        grad = OpenCLTensor.zeros(shape, requires_grad=False, device=out_grad.device)
+        cl.enqueue_copy(grad.device.queue, grad.data, out_grad.data, 
+            byte_count=grad.dtype.itemsize,
+            dest_offset=(idx * grad.strides).sum() * grad.dtype.itemsize
+        )
+        return grad
+
+@OpenCLTensor.register_op("__setitem__")
+class __setitem(Function):
+    """ TODO: currently only supports direct item indexing (no slicing or masking). """
+    def forward(ctx, a, idx, val):
+        val = val if val is isinstance(val, np.ndarray) else np.asarray(val, dtype=a.dtype)
+        idx = (idx,) if isinstance(idx, int) else idx
+        assert len(idx) == len(a.shape)
+        idx = np.asarray(idx, dtype=np.int32)
+        cl.enqueue_copy(a.device.queue, a.data, val, 
+            device_offset=(idx * a.strides).sum() * a.dtype.itemsize
+        )
+        return a

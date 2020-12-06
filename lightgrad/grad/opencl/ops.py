@@ -267,8 +267,13 @@ class __setitem(Function):
         atom_kernel(
             d=_idx_view(a, idx), 
             s=val, out='d',
-            operation_str='d=s'
+            operation_str='d=s',
+            depends_on_out=False
         )
         return a
 
+""" Reductions """
 
+class _sum(Function):
+    def forward(ctx, t, *args, **kwargs):
+        pass

@@ -10,7 +10,7 @@ def cache_build_kernel(ctx, source):
     return cl.Program(ctx, source).build()
 
 @functools.lru_cache()
-def cache_build_atom_kernel(ctx, operation_str:str, names:tuple, ctypes:tuple, out_tensor_id:int, use_strides:bool):
+def cache_build_atom_kernel(ctx, operation_str:str, names:tuple, ctypes:tuple, out_tensor_id:int, use_strides:bool, read_out:bool):
     assert len(names) == len(ctypes)
     # build arguments
     tensor_args = ["__global %(type)s* %(name)s" % {'type': c, 'name': n.upper()} for n, c in zip(names, ctypes)]    
@@ -56,7 +56,7 @@ def cache_build_atom_kernel(ctx, operation_str:str, names:tuple, ctypes:tuple, o
             {build_indices_source if use_strides else ""}
             // gather elements by indices
             {(nl+" "*12).join([
-                f"const {t} {n} = {n.upper()}[{idx}];"
+                f"{t} {n} = {n.upper()}[{idx}];"
                 for t, n, idx in zip(
                     ctypes[:out_tensor_id] + ctypes[out_tensor_id+1:],
                     names[:out_tensor_id] + names[out_tensor_id+1:], 
@@ -64,7 +64,7 @@ def cache_build_atom_kernel(ctx, operation_str:str, names:tuple, ctypes:tuple, o
                 )
             ])}
             // apply function
-            {ctypes[out_tensor_id]} {names[out_tensor_id]};
+            {ctypes[out_tensor_id]} {names[out_tensor_id]} { "= %s[%s]" % (names[out_tensor_id].upper(), idxs[out_tensor_id]) if read_out else "" };
             {operation_str};
             // save output in tensor
             {names[out_tensor_id].upper()}[{idxs[out_tensor_id]}] = {names[out_tensor_id]};
@@ -72,7 +72,7 @@ def cache_build_atom_kernel(ctx, operation_str:str, names:tuple, ctypes:tuple, o
     """
     return cl.Program(ctx, source).build()
 
-def atom_kernel(operation_str:str, out:str ="__OUT", **named_tensors):
+def atom_kernel(operation_str:str, out:str ="__OUT", depends_on_out:bool =True, **named_tensors):
     # get device to use
     t = next((t for t in named_tensors.values() if isinstance(t, OpenCLTensor)), None)
     device, dtype = t.device, t.dtype
@@ -105,6 +105,8 @@ def atom_kernel(operation_str:str, out:str ="__OUT", **named_tensors):
         tensors += (out_tensor,)
         shapes += (shape,)
         ctypes += (dtype_to_ctype(out_dtype),)
+        # cannot depend on output since it was just created
+        depends_on_out = False
     else:
         out_tensor = tensors[names.index(out)]
     # broadcast strides
@@ -123,11 +125,11 @@ def atom_kernel(operation_str:str, out:str ="__OUT", **named_tensors):
         shape = cl.Buffer(device.ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=shape)
         strides = tuple(cl.Buffer(device.ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=st) for st in all_strides)
         # build program and apply
-        prg = cache_build_atom_kernel(device.ctx, operation_str, names, ctypes, names.index(out), use_strides=True)
+        prg = cache_build_atom_kernel(device.ctx, operation_str, names, ctypes, names.index(out), use_strides=True, read_out=depends_on_out)
         prg.atom(device.queue, [out_tensor.numel()], None, *datas, *strides, shape, np.int32(dim))
     else:
         # build program and apply
-        prg = cache_build_atom_kernel(device.ctx, operation_str, names, ctypes, names.index(out), use_strides=False)
+        prg = cache_build_atom_kernel(device.ctx, operation_str, names, ctypes, names.index(out), use_strides=False, read_out=depends_on_out)
         prg.atom(device.queue, [out_tensor.numel()], None, *datas)
     # wait until operation is finished
     device.queue.finish()

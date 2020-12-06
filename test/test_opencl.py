@@ -14,7 +14,7 @@ if device.is_available():
 
         def compare_unary_func(self, cpu_f, opencl_f, shape=(64, 64), l=-1, h=1, eps=1e-3, transpose=False):
             # create random numpy array
-            a = np.random.uniform(l, h, size=shape)
+            a = np.random.uniform(l, h, size=shape).astype(np.float32)
             a = a if not transpose else a.T
             # create cpu and opencl tensor and compare
             cpu_tensor = CpuTensor.from_numpy(a)
@@ -29,6 +29,7 @@ if device.is_available():
             # create random numpy arrays
             a = np.random.uniform(l, h, size=a_shape) if not transpose else np.random.uniform(l, h, size=a_shape).T
             b = np.random.uniform(l, h, size=b_shape) if not transpose else np.random.uniform(l, h, size=b_shape).T
+            a, b = a.astype(np.float32), b.astype(np.float32)
             # create cpu and opencl tensor and compare
             cpu_a, cpu_b = CpuTensor.from_numpy(a), CpuTensor.from_numpy(b)
             opencl_a, opencl_b = device.Tensor.from_numpy(a), device.Tensor.from_numpy(b)

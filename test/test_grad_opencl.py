@@ -13,15 +13,15 @@ if device.is_available():
     class OpenCLGradCheck(unittest.TestCase):
 
         def unary_func(self, f, shape=(3,), l=-1, h=1, eps=1e-3, transpose=False):
-            t = np.random.uniform(l, h, size=shape)
+            t = np.random.uniform(l, h, size=shape).astype(np.float32)
             t = device.Tensor.from_numpy(t if not transpose else t.T)
             return assert_gradcheck(f, t, eps=eps)
 
         def simple_binary_func(self, f, a_shape=(3, 3), b_shape=(3, 3), l=-1, h=1, eps=1e-3, transpose=False):
             a = np.random.uniform(l, h, size=a_shape) if not transpose else np.random.uniform(l, h, size=a_shape).T
             b = np.random.uniform(l, h, size=b_shape) if not transpose else np.random.uniform(l, h, size=b_shape).T
-            a = device.Tensor.from_numpy(a)
-            b = device.Tensor.from_numpy(b)
+            a = device.Tensor.from_numpy(a.astype(np.float32))
+            b = device.Tensor.from_numpy(b.astype(np.float32))
             assert_gradcheck(lambda a: f(a, b), a, eps=eps)
             assert_gradcheck(lambda b: f(a, b), b, eps=eps)
 

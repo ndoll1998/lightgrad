@@ -228,34 +228,47 @@ class relu(Function):
 
 """ Selectors """
 
+def _idx_view(a, idx):
+    # prepare idx tuple
+    idx = (idx,) if not isinstance(idx, tuple) else idx
+    idx += tuple(slice(s) for s in a.shape[len(idx):])
+    idx = tuple(slice(*i.indices(s)) if isinstance(i, slice) else i for s, i in zip(a.shape, idx))
+    # save for backward
+    # prepare shape and strides of sliced tensor
+    shape = tuple(i.stop - i.start for i in idx if isinstance(i, slice))
+    strides = tuple(st for i, st in zip(idx, a.strides) if isinstance(i, slice))
+    assert len(idx) == len(a.shape) == len(a.strides)
+    # get start byte position
+    idx_start = tuple(i.start if isinstance(i, slice) else i for i in idx)
+    idx_start = np.asarray(idx_start, dtype=np.int32)
+    byte_start = (idx_start * np.asarray(a.strides, dtype=np.int32)).sum() * a.dtype.itemsize
+    # create sliced tensor
+    return OpenCLTensor(a.data[byte_start:], shape=shape, strides=strides, dtype=a.dtype)
+
 @OpenCLTensor.register_op("__getitem__")
 class __getitem(Function):
-    """ TODO: currently only supports direct item indexing (no slicing or masking). """
+    """ TODO: currently only supports single index or slice (no masking) """
     def forward(ctx, a, idx):
-        idx = (idx,) if isinstance(idx, int) else idx
-        assert len(idx) == len(a.shape)
-        idx = np.asarray(idx, dtype=np.int32)
+        out = _idx_view(a, idx)
         ctx.save_for_backward(a.shape, idx)
-        off = (idx * a.strides).sum() * a.dtype.itemsize
-        return OpenCLTensor(a.data[off:off+a.dtype.itemsize], shape=tuple(), dtype=a.dtype)
+        return out.contiguous()
     def backward(ctx, out_grad):
+        # create gradient tensor
         shape, idx = ctx.get_saved_tensors()
-        grad = OpenCLTensor.zeros(shape, requires_grad=False, device=out_grad.device)
-        cl.enqueue_copy(grad.device.queue, grad.data, out_grad.data, 
-            byte_count=grad.dtype.itemsize,
-            dest_offset=(idx * grad.strides).sum() * grad.dtype.itemsize
-        )
+        grad = OpenCLTensor.zeros(shape, dtype=out_grad.dtype, requires_grad=False, device=out_grad.device)
+        # write output gradient to gradient according to idx
+        grad[idx] = out_grad
         return grad
 
 @OpenCLTensor.register_op("__setitem__")
 class __setitem(Function):
-    """ TODO: currently only supports direct item indexing (no slicing or masking). """
+    """ TODO: currently only supports single index or slice (no masking) """
     def forward(ctx, a, idx, val):
-        val = val if val is isinstance(val, np.ndarray) else np.asarray(val, dtype=a.dtype)
-        idx = (idx,) if isinstance(idx, int) else idx
-        assert len(idx) == len(a.shape)
-        idx = np.asarray(idx, dtype=np.int32)
-        cl.enqueue_copy(a.device.queue, a.data, val, 
-            device_offset=(idx * a.strides).sum() * a.dtype.itemsize
+        atom_kernel(
+            d=_idx_view(a, idx), 
+            s=val, out='d',
+            operation_str='d=s'
         )
         return a
+
+

@@ -1,6 +1,7 @@
 import numpy as np
 import pyopencl as cl
 from pyopencl.tools import dtype_to_ctype
+from .tensor import OpenCLTensor
 import functools
 from math import ceil
 
@@ -72,11 +73,19 @@ def cache_build_atom_kernel(ctx, operation_str:str, names:tuple, ctypes:tuple, o
     return cl.Program(ctx, source).build()
 
 def atom_kernel(operation_str:str, out:str ="__OUT", **named_tensors):
-    # TODO: handle non tensor inputs
+    # get device to use
+    t = next((t for t in named_tensors.values() if isinstance(t, OpenCLTensor)), None)
+    device, dtype = t.device, t.dtype
+    assert device is not None, "Cannot find device to use because no OpenCLTensor was provided!"
+    # handle non tensor inputs
+    for key, t in named_tensors.items():
+        t = np.asarray(t, dtype=dtype) if not isinstance(t, (np.ndarray, OpenCLTensor)) else t
+        t = device.Tensor.from_numpy(t) if not isinstance(t, OpenCLTensor) else t
+        named_tensors[key] = t
+    # prepare
     names = tuple(sorted(named_tensors))       # make sure the order is always the same to reduce compilations
     tensors = tuple(named_tensors[n] for n in names)
     ctypes = tuple(dtype_to_ctype(t.dtype) for t in tensors)
-    device = tensors[0].device
     # broadcast shapes
     dim = max([len(t.shape) for t in tensors])
     shapes = []
@@ -124,10 +133,13 @@ def atom_kernel(operation_str:str, out:str ="__OUT", **named_tensors):
     device.queue.finish()
     return out_tensor
 
+
 @functools.lru_cache()
-def cache_build_dot_kernel(ctx, ctype_A:str, ctype_B:str, ctype_O:str, block_size:int):
+def cache_build_dot_kernel(ctx, ctype_A:str, ctype_B:str, ctype_O:str, block_size:int, work_per_thread:int):
     return cl.Program(ctx, f"""
-        #define TS {block_size}
+        #define TS {block_size}         // tile size
+        #define WPT {work_per_thread}   // work per thread
+        #define RTS TS/WPT              // reduced tile size
 
         __kernel void matmul(
             const __global {ctype_A}* A,
@@ -145,54 +157,83 @@ def cache_build_dot_kernel(ctx, ctype_A:str, ctype_B:str, ctype_O:str, block_siz
             const uint bj = get_group_id(1);
 
             // allocate local memory
-            __local {ctype_A} Asub[TS][TS];
-            __local {ctype_B} Bsub[TS][TS];
-            // accumulate
-            {ctype_O} acc = 0;
+            __local {ctype_A} Asub[RTS][TS];
+            __local {ctype_B} Bsub[RTS][TS];
+            // allocate private registers
+            {ctype_A} Areg;
+            {ctype_B} Breg[WPT];
+            {ctype_O} acc[WPT][WPT];
+
+            // zero out accumulation registers
+            for (int wi=0; wi < WPT; wi++)
+                for (int wj=0; wj < WPT; wj++)
+                    acc[wi][wj] = 0;
 
             // read offsets
             const uint Aoff = bi * TS * K;
             const uint Boff = bj * TS;
             
-            for (int t = 0; t < K; t+=TS) {{
+            for (int t = 0; t < K; t+=RTS) {{                
                 // load tile into local memory
-                Asub[lj][li] = ((t+li<K) && (bi*TS+lj<M))? A[Aoff + lj * K + t + li] : 0;
-                Bsub[lj][li] = ((t+lj<K) && (bj*TS+li)<N)? B[Boff + (t + lj) * N + li] : 0;
+                for (int r = 0; r < TS; r+=RTS) {{
+                    Asub[lj][r+li] = A[Aoff + (r + li) * K + t + lj];
+                    Bsub[lj][r+li] = B[Boff + (lj + t) * N + r + li];
+                }}
+                // wait until all loaded
                 barrier(CLK_LOCAL_MEM_FENCE);
-                // accumulate
-                for (int k=0; k < TS; k++)
-                    acc += Asub[lj][k] * Bsub[k][li];
-                // wait until work group finished loop
+
+                for (int k = 0; k < RTS; k++) {{
+                    // load values of Bsub to registers
+                    for (int wj=0; wj < WPT; wj++) 
+                        Breg[wj] = Bsub[k][lj + wj * RTS];
+                    // accumulate
+                    for (int wi=0; wi < WPT; wi++) {{
+                        Areg = Asub[k][li + wi * RTS];
+                        for (int wj=0; wj<WPT; wj++)
+                            acc[wj][wi] += Areg * Breg[wj];
+                    }}
+                }}
+                // wait until work group finished computations
+                // before loading next tiles into local memory
                 barrier(CLK_LOCAL_MEM_FENCE);
             }}
-            // write to output
-            uint i = bi * TS + lj;
-            uint j = bj * TS + li;
-            if ((i < M) && (j < N)) {{ 
-                O[i * N + j] = acc; 
-            }}
+            // store output in matrix            
+            uint i = bi * TS + li;
+            uint j = bj * TS + lj;
+            for (int wi = 0; wi < WPT; wi++)
+                for (int wj = 0; wj < WPT; wj++)
+                    O[(i + wj*RTS) * N + (j + wi*RTS)] = acc[wi][wj];
         }}
     """).build()
 
-def dot_kernel(A, B, block_size=16):
+def _match_blocks(T, block_size):
+    M, N = T.shape
+    if (M % block_size != 0) or (N % block_size != 0):
+        shape = (M + block_size - M % block_size, N + block_size - N % block_size)
+        T_pad = T.device.Tensor.zeros(shape, dtype=T.dtype)
+        T_pad[:M, :N] = T
+        return T_pad
+    return T
+
+def dot_kernel(A, B, block_size:int =128, work_per_thread:int =8):
     assert len(A.shape) == len(B.shape) == 2
     assert A.shape[1] == B.shape[0]
-    # tensor is tranposed iff it is not contiguous
-    transpose_A = not A.is_contiguous
-    transpose_B = not B.is_contiguous
-    # create output tensor
+    # get tensor information
     device = A.device
-    M, N, K = np.int32(A.shape[0]), np.int32(B.shape[1]), np.int32(A.shape[1])
-    O = device.Tensor.empty(shape=(M, N), dtype=A.dtype) # TODO: broadcast dtype
+    M, N = np.int32(A.shape[0]), np.int32(B.shape[1])
+    # pad inputs to be multiple of block size in both directions
+    A = _match_blocks(A, block_size)
+    B = _match_blocks(B, block_size)
+    # create output tensor
+    pad_M, pad_N, pad_K = np.int32(A.shape[0]), np.int32(B.shape[1]), np.int32(A.shape[1])
+    O = device.Tensor.empty(shape=(pad_M, pad_N), dtype=A.dtype) # TODO: broadcast dtype
     # get data types
     ctype_A = dtype_to_ctype(A.dtype)
     ctype_B = dtype_to_ctype(B.dtype)
     ctype_O = dtype_to_ctype(O.dtype)
     # build and call kernel
-    global_shape = [ceil(M/block_size)*block_size, ceil(N/block_size)*block_size]
-    local_shape = [block_size] * 2
-    prg = cache_build_dot_kernel(device.ctx, ctype_A, ctype_B, ctype_O, block_size)
-    prg.matmul(device.queue, global_shape, local_shape, A.contiguous().data, B.contiguous().data, O.data, M, N, K)
-    device.queue.finish()
-    return O
-    
+    global_shape, local_shape = [pad_M // work_per_thread, pad_N // work_per_thread], [block_size // work_per_thread] * 2
+    prg = cache_build_dot_kernel(device.ctx, ctype_A, ctype_B, ctype_O, block_size, work_per_thread)
+    prg.matmul(device.queue, global_shape, local_shape, A.contiguous().data, B.contiguous().data, O.data, pad_M, pad_N, pad_K)
+    # remove padding from output
+    return (O if (M, N) == (pad_M, pad_N) else O[:M, :N])

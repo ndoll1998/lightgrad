@@ -31,7 +31,7 @@ class OpenCLTensor(Tensor, metaclass=__OpenCLTensorType):
         # prepare shape
         n, m = abs(np.prod(shape)), data.size // self.__dtype.itemsize
         shape = tuple(k if k != -1 else m // n for k in shape)
-        assert np.prod(shape) == m
+        assert np.prod(shape) <= m
         # save shape and strides
         self.__shape = tuple(shape)
         self.__strides = tuple(strides) if strides is not None else _get_strides(self.__shape)
@@ -52,6 +52,8 @@ class OpenCLTensor(Tensor, metaclass=__OpenCLTensorType):
 
     @property
     def is_contiguous(self) -> bool:
+        if (len(self.strides) > 0) and (self.strides[-1] != 1):
+            return False
         shape = np.asarray(self.shape, dtype=np.int32)
         strides = np.asarray(self.strides, dtype=np.int32)
         return (strides[:-1] == strides[1:] * shape[1:]).all()

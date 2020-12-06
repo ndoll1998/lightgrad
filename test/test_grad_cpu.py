@@ -1,7 +1,7 @@
 import unittest
 # import lightgrad
 from lightgrad.grad import Tensor
-from lightgrad.grad.utils.gradcheck import gradcheck
+from lightgrad.grad.utils.gradcheck import assert_gradcheck
 # set random seed
 import numpy as np
 np.random.seed(1337)
@@ -10,13 +10,13 @@ class GradCheck(unittest.TestCase):
 
     def unary_func(self, f, shape=(3,), l=-1, h=1, eps=1e-3):
         t = Tensor.uniform(l, h, shape=shape)
-        return self.assertTrue(gradcheck(f, t, eps=eps))
+        assert_gradcheck(f, t, eps=eps)
 
     def simple_binary_func(self, f, shape=(3, 3), l=-1, h=1, eps=1e-3):
         a = Tensor.uniform(l, h, shape=shape)
         b = Tensor.uniform(l, h, shape=shape)
-        self.assertTrue(gradcheck(lambda a: f(a, b), a, eps=eps))
-        self.assertTrue(gradcheck(lambda b: f(a, b), b, eps=eps))
+        assert_gradcheck(lambda a: f(a, b), a, eps=eps)
+        assert_gradcheck(lambda b: f(a, b), b, eps=eps)
 
     """ transformations """
     def test_transpose(self):
@@ -82,8 +82,8 @@ class GradCheck(unittest.TestCase):
     def test_convolution(self):
         x = Tensor.uniform(-1, 1, shape=(3, 2, 5, 5))
         w = Tensor.uniform(-1, 1, shape=(4, 2, 3, 3))
-        self.assertTrue(gradcheck(lambda x: x.conv(w, strides=1), x))
-        self.assertTrue(gradcheck(lambda w: x.conv(w, strides=1), w))
+        assert_gradcheck(lambda x: x.conv(w, strides=1), x)
+        assert_gradcheck(lambda w: x.conv(w, strides=1), w)
 
 if __name__ == '__main__':
     unittest.main(verbose=2)

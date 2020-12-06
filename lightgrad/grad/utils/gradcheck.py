@@ -54,3 +54,10 @@ def gradcheck(f, x, eps=1e-3, atol=5e-4, rtol=5e-4):
     NJ = numerical_jacobian(f, x, eps)
     # compare
     return np.allclose(J, NJ, atol=atol, rtol=rtol)
+
+def assert_gradcheck(f, x, eps=1e-3, atol=5e-4, rtol=5e-4):
+    # build jacobian matrices
+    J = jacobian(f, x)
+    NJ = numerical_jacobian(f, x, eps)
+    # compare
+    return np.testing.assert_allclose(J, NJ, atol=atol, rtol=rtol)

@@ -28,12 +28,19 @@ class Profiler(object, metaclass=__ProfilerMeta):
     def profile(name, backward=False):
         return Profiler.__Tracker(name, backward=backward)
     @staticmethod
-    def print():
+    def print(topn=-1):
         names = set(list(Profiler.__ft.keys()) + list(Profiler.__bt.keys()))
         names = sorted(names, key=lambda n: -Profiler.__ft[n])
+        names = names[:topn] if topn > 0 else names
         print(" Function       |   forward      \t|   backward   ")
         print("-"*70)
         for n in names:
             print(" %-15s| %8.4fs (%i)\t| %8.4fs (%i) " % (
                 n, Profiler.__ft[n], Profiler.__fc[n], Profiler.__bt[n], Profiler.__bc[n]))
         print("\n")
+    @staticmethod
+    def reset():
+        Profiler.__ft.clear()
+        Profiler.__fc.clear()
+        Profiler.__bt.clear()
+        Profiler.__bc.clear()

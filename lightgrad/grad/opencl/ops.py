@@ -196,6 +196,67 @@ class fill(Function):
 """ Non-Linearities """
 
 @OpenCLTensor.register_op()
+class sin(Function):
+    def forward(ctx, t):
+        ctx.save_for_backward(t)
+        return atom_kernel(
+            t=t, out='o',
+            operation_str='o = sin(t)'
+        )
+    def backward(ctx, out_grad):
+        t, = ctx.get_saved_tensors()
+        return atom_kernel(
+            t=t, g=out_grad, out='o',
+            operation_str='o = cos(t) * g'
+        )
+
+@OpenCLTensor.register_op()
+class cos(Function):
+    def forward(ctx, t):
+        ctx.save_for_backward(t)
+        return atom_kernel(
+            t=t, out='o',
+            operation_str='o = cos(t)'
+        )
+    def backward(ctx, out_grad):
+        t, = ctx.get_saved_tensors()
+        return atom_kernel(
+            t=t, g=out_grad, out='o',
+            operation_str='o = -sin(t) * g'
+        )
+
+@OpenCLTensor.register_op()
+class exp(Function):
+    def forward(ctx, t):
+        y = atom_kernel(
+            t=t, out='o',
+            operation_str='o = exp(t)'
+        )
+        ctx.save_for_backward(y)
+        return y
+    def backward(ctx, out_grad):
+        y, = ctx.get_saved_tensors()
+        return atom_kernel(
+            y=y, g=out_grad, out='o',
+            operation_str='o = y * g'
+        )
+
+@OpenCLTensor.register_op()
+class log(Function):
+    def forward(ctx, t):
+        ctx.save_for_backward(t)
+        return atom_kernel(
+            t=t, out='o',
+            operation_str='o = log(t)'
+        )
+    def backward(ctx, out_grad):
+        t, = ctx.get_saved_tensors()
+        return atom_kernel(
+            t=t, g=out_grad, out='o',
+            operation_str='o = (1 / t) * g'
+        )
+
+@OpenCLTensor.register_op()
 class sigmoid(Function):
     def forward(ctx, t):
         y = atom_kernel(
@@ -209,6 +270,22 @@ class sigmoid(Function):
         return atom_kernel(
             y=y, g=out_grad, out='o',
             operation_str='o = y * (1-y) * g'
+        )
+
+@OpenCLTensor.register_op()
+class tanh(Function):
+    def forward(ctx, t):
+        y = atom_kernel(
+            t=t, out='o',
+            operation_str='o = tanh(t)'
+        )
+        ctx.save_for_backward(y)
+        return y
+    def backward(ctx, out_grad):
+        y, = ctx.get_saved_tensors()
+        return atom_kernel(
+            y=y, g=out_grad, out='o',
+            operation_str='o = (1 - y*y) * g'
         )
 
 @OpenCLTensor.register_op()
@@ -274,6 +351,7 @@ class __setitem(Function):
 
 """ Reductions """
 
+@OpenCLTensor.register_op("sum")
 class _sum(Function):
     def forward(ctx, t, *args, **kwargs):
         pass

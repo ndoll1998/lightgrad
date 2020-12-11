@@ -75,11 +75,21 @@ if device.is_available():
         """ unary operators """
         def test_neg(self):
             self.compare_unary_func(CpuTensor.neg, OpenCLTensor.neg)
+        def test_sin(self):
+            self.compare_unary_func(CpuTensor.sin, OpenCLTensor.sin)
+        def test_cos(self):
+            self.compare_unary_func(CpuTensor.cos, OpenCLTensor.cos)
+        def test_exp(self):
+            self.compare_unary_func(CpuTensor.exp, OpenCLTensor.exp)
+        def test_log(self):
+            self.compare_unary_func(CpuTensor.log, OpenCLTensor.log, l=0.1, h=10)
         def test_sigmoid(self):
             self.compare_unary_func(CpuTensor.sigmoid, OpenCLTensor.sigmoid)
+        def test_tanh(self):
+            self.compare_unary_func(CpuTensor.tanh, OpenCLTensor.tanh)
         def test_relu(self):
             self.compare_unary_func(CpuTensor.relu, OpenCLTensor.relu)
-
+    
         """ Reductions/Selections """
             
         """ binary operators """

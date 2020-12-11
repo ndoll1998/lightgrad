@@ -34,8 +34,18 @@ if device.is_available():
         """ unary operators """
         def test_neg(self):
             self.unary_func(OpenCLTensor.neg)
+        def test_sin(self):
+            self.unary_func(OpenCLTensor.sin)
+        def test_cos(self):
+            self.unary_func(OpenCLTensor.cos)
+        def test_exp(self):
+            self.unary_func(OpenCLTensor.exp)
+        def test_log(self):
+            self.unary_func(OpenCLTensor.log, l=0.1, h=10)
         def test_sigmoid(self):
             self.unary_func(OpenCLTensor.sigmoid)
+        def test_tanh(self):
+            self.unary_func(OpenCLTensor.tanh)
         def test_relu(self):
             self.unary_func(OpenCLTensor.relu)
 

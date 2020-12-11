@@ -42,7 +42,7 @@ class GradCheck(unittest.TestCase):
     def test_tanh(self):
         self.unary_func(Tensor.tanh)
     def test_relu(self):
-      self.unary_func(Tensor.relu, l=1, h=10)
+      self.unary_func(Tensor.relu)
 
     """ Reductions/Selections """
     def test_max(self):

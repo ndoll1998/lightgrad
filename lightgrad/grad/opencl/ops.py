@@ -2,7 +2,7 @@ import numpy as np
 import pyopencl as cl
 from ..func import Function
 from .tensor import OpenCLTensor
-from .kernels import atom_kernel, dot_kernel
+from .kernels import atom_kernel, dot_kernel, reduction_kernel
 
 """ Helpers """
 
@@ -310,7 +310,6 @@ def _idx_view(a, idx):
     idx = (idx,) if not isinstance(idx, tuple) else idx
     idx += tuple(slice(s) for s in a.shape[len(idx):])
     idx = tuple(slice(*i.indices(s)) if isinstance(i, slice) else i for s, i in zip(a.shape, idx))
-    # save for backward
     # prepare shape and strides of sliced tensor
     shape = tuple(i.stop - i.start for i in idx if isinstance(i, slice))
     strides = tuple(st for i, st in zip(idx, a.strides) if isinstance(i, slice))
@@ -353,5 +352,16 @@ class __setitem(Function):
 
 @OpenCLTensor.register_op("sum")
 class _sum(Function):
-    def forward(ctx, t, *args, **kwargs):
-        pass
+    def forward(ctx, t, axis:int =None, keepdims:bool =False):
+        return reduction_kernel(t, axis=axis, keepdims=keepdims, operation_str='a + b')
+        
+@OpenCLTensor.register_op()
+class max(Function):
+    def forward(ctx, t, axis:int =None, keepdims:bool =False):
+        return reduction_kernel(t, axis=axis, keepdims=keepdims, operation_str='max(a, b)', neutral="-INFINITY")
+        
+@OpenCLTensor.register_op()
+class min(Function):
+    def forward(ctx, t, axis:int =None, keepdims:bool =False):
+        return reduction_kernel(t, axis=axis, keepdims=keepdims, operation_str='min(a, b)', neutral="INFINITY")
+        

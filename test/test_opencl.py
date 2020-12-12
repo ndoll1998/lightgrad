@@ -91,6 +91,18 @@ if device.is_available():
             self.compare_unary_func(CpuTensor.relu, OpenCLTensor.relu)
     
         """ Reductions/Selections """
+        def test_sum(self):
+            self.compare_unary_func(CpuTensor.sum, OpenCLTensor.sum, shape=(64, 64))
+            self.compare_unary_func(lambda t: CpuTensor.sum(t, axis=0), lambda t: OpenCLTensor.sum(t, axis=0), shape=(64, 64))
+            self.compare_unary_func(lambda t: CpuTensor.sum(t, axis=1), lambda t: OpenCLTensor.sum(t, axis=1), shape=(64, 64))
+        def test_min(self):
+            self.compare_unary_func(CpuTensor.min, OpenCLTensor.min, shape=(64, 64))
+            self.compare_unary_func(lambda t: CpuTensor.min(t, axis=0), lambda t: OpenCLTensor.min(t, axis=0), shape=(64, 64))
+            self.compare_unary_func(lambda t: CpuTensor.min(t, axis=1), lambda t: OpenCLTensor.min(t, axis=1), shape=(64, 64))
+        def test_max(self):
+            self.compare_unary_func(CpuTensor.max, OpenCLTensor.max, shape=(64, 64))
+            self.compare_unary_func(lambda t: CpuTensor.max(t, axis=0), lambda t: OpenCLTensor.max(t, axis=0), shape=(64, 64))
+            self.compare_unary_func(lambda t: CpuTensor.max(t, axis=1), lambda t: OpenCLTensor.max(t, axis=1), shape=(64, 64))
             
         """ binary operators """
         def test_add(self):

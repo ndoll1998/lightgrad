@@ -293,8 +293,8 @@ class __setitem(Function):
 @CpuTensor.register_op()
 @_use_tensor_data
 class max(Function):
-    def forward(ctx, x, axis:int =-1):
-        val = np.max(x, axis=axis)
+    def forward(ctx, x, *args, **kwargs):
+        val = np.max(x, *args, **kwargs)
         ctx.save_for_backward(x == val)
         return val
     def backward(ctx, out_grad):
@@ -304,8 +304,8 @@ class max(Function):
 @CpuTensor.register_op()
 @_use_tensor_data
 class min(Function):
-    def forward(ctx, x, axis:int =-1):
-        val = np.min(x, axis=axis)
+    def forward(ctx, x, *args, **kwargs):
+        val = np.min(x, *args, **kwargs)
         ctx.save_for_backward(x == val)
         return val
     def backward(ctx, out_grad):

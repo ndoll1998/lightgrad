@@ -74,6 +74,8 @@ def atom_kernel(operation_str:str, out:str ="__OUT", depends_on_out:bool =True, 
     assert device is not None, "Cannot find device to use because no OpenCLTensor was provided!"
     # handle non tensor inputs
     for key, t in named_tensors.items():
+        # if not isinstance(t, (np.ndarray, OpenCLTensor, tuple, list)):
+            # print(type(t))
         t = [t] if not isinstance(t, (np.ndarray, OpenCLTensor, tuple, list)) else t
         t = np.asarray(t, dtype=dtype) if not isinstance(t, (np.ndarray, OpenCLTensor)) else t
         t = device.Tensor.from_numpy(t) if not isinstance(t, OpenCLTensor) else t
@@ -87,7 +89,8 @@ def atom_kernel(operation_str:str, out:str ="__OUT", depends_on_out:bool =True, 
     shapes = []
     for t in tensors:
         shape = np.ones(dim, dtype=np.int32)
-        shape[-len(t.shape):] = t.shape
+        if len(t.shape) > 0:
+            shape[-len(t.shape):] = t.shape
         shapes.append(shape)
     shape = np.maximum(*shapes) if len(shapes) > 1 else shapes[0]
     assert all([np.all((s == 1) | (s == shape)) for s in shapes]), "Cannot broadcast shapes!"
@@ -110,8 +113,9 @@ def atom_kernel(operation_str:str, out:str ="__OUT", depends_on_out:bool =True, 
     for t, s in zip(tensors, shapes):
         k = len(t.shape)
         strides = np.zeros(dim, dtype=np.int32)
-        mask = (s[-k:] == shape[-k:])
-        strides[-k:][mask] = np.asarray(t.strides, dtype=np.int32)[mask]
+        if k > 0:
+            mask = (s[-k:] == shape[-k:])
+            strides[-k:][mask] = np.asarray(t.strides, dtype=np.int32)[mask]
         all_strides.append(strides)
     # collect data buffers
     datas = tuple(t.data for t in tensors)

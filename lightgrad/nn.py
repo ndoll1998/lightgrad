@@ -23,7 +23,17 @@ class Module(object):
         # yield parameters of submodules
         for m in self.__modules.values():
             yield from m.parameters()
-
+    
+    def map_params(self, fn):
+        # map parameters
+        for key, tensor in self.__paramters.items():
+            tensor = fn(tensor)
+            self.__paramters[key] = tensor
+            setattr(self, key, tensor)
+        # map sub-modules
+        for m in self.__modules.values():
+            m.map_params(fn)
+        return self
 
 class Linear(Module):
     def __init__(self, in_feats:int, out_feats:int, bias:bool =True):

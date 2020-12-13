@@ -104,7 +104,7 @@ class mul(Function):
         return out_grad * b, a * out_grad
 
 @OpenCLTensor.register_op()
-@OpenCLTensor.register_op("__div__")
+@OpenCLTensor.register_op("__truediv__")
 class div(Function):
     def forward(ctx, a, b):
         ctx.save_for_backward(a, b)
@@ -303,6 +303,12 @@ class relu(Function):
             operation_str='o = (t>=0)? g : 0'
         )
 
+@OpenCLTensor.register_op()
+class softmax(Function):
+    def forward(ctx, t, dim:int =-1):
+        exps = (t - t.max(axis=dim, keepdims=True)).exp()
+        return exps / exps.sum(axis=dim, keepdims=True)
+
 """ Selectors """
 
 def _idx_view(a, idx):
@@ -351,10 +357,11 @@ class __setitem(Function):
 """ Reductions """
 
 @OpenCLTensor.register_op("sum")
+@OpenCLTensor.register_op("mean")   # TODO
 class _sum(Function):
     def forward(ctx, t, axis:int =None, keepdims:bool =False):
         return reduction_kernel(t, axis=axis, keepdims=keepdims, operation_str='a + b')
-        
+
 @OpenCLTensor.register_op()
 class max(Function):
     def forward(ctx, t, axis:int =None, keepdims:bool =False):

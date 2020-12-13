@@ -9,11 +9,9 @@ class _TensorType(type):
         T = type.__new__(cls, name, bases, attrs)
         # ignore abstract tensor type and types created during runtime
         if ('__module__' in attrs) and (attrs['__module__'] != __name__):
-            # register a convert for the tensor type
+            # register a convert for the tensor type and register it
             backend_name = attrs['__module__'].split('.')[-2]
-            # create convert dispatcher
-            convert = lambda t, *args, **kwargs: T.from_numpy(t.numpy(), *args, **kwargs)
-            setattr(Tensor, backend_name, convert)
+            Tensor.register_backend(backend_name, T)
         return T
 
 class Tensor(metaclass=_TensorType):
@@ -52,7 +50,7 @@ class Tensor(metaclass=_TensorType):
         raise NotImplementedError()
 
     def item(self):
-        raise NotImplementedError()
+        return self.numpy().item()
     def numel(self) -> int:
         return int(np.prod(self.shape))
 
@@ -134,7 +132,7 @@ class Tensor(metaclass=_TensorType):
         if op is not None:
             # direct use
             if not issubclass(op, Function):
-                raise RuntimeError("Operators must inherit from Function! (%s)" % op.__name__)
+                raise TypeError("Operators must inherit from Function! (%s)" % op.__name__)
             # not sure why this is necessary, but without dispatch wrapper
             # the op function is treatet as a static member
             dispatch = (lambda self, *args, **kwargs: op(self, *args, **kwargs))
@@ -144,6 +142,14 @@ class Tensor(metaclass=_TensorType):
             # use as decorator
             return lambda op: cls.register_op(name if name is not None else op.__name__, op)
 
+    @staticmethod
+    def register_backend(name:str, Tensor_cls:type):
+        # check type
+        if not issubclass(Tensor_cls, Tensor):
+            raise TypeError("Backend tensors must inherit from Tensor! (%s)" % Tensor_cls.__name__)
+        # create convert dispatcher
+        convert = lambda t, *args, **kwargs: Tensor_cls.from_numpy(t.numpy(), *args, **kwargs)
+        setattr(Tensor, name, convert)
 
 # imports at bottom to avoid circular import errors
 from .func import Function

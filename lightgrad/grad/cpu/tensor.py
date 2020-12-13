@@ -23,9 +23,6 @@ class CpuTensor(Tensor):
     def shape(self) -> tuple:
         return self.data.shape
 
-    def item(self):
-        return self.data.item()
-
     @staticmethod
     def empty(shape, *args, **kwargs) -> "CpuTensor":
         return CpuTensor(np.empty(shape), *args, **kwargs)

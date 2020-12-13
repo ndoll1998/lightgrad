@@ -74,6 +74,7 @@ def atom_kernel(operation_str:str, out:str ="__OUT", depends_on_out:bool =True, 
     assert device is not None, "Cannot find device to use because no OpenCLTensor was provided!"
     # handle non tensor inputs
     for key, t in named_tensors.items():
+        t = [t] if not isinstance(t, (np.ndarray, OpenCLTensor, tuple, list)) else t
         t = np.asarray(t, dtype=dtype) if not isinstance(t, (np.ndarray, OpenCLTensor)) else t
         t = device.Tensor.from_numpy(t) if not isinstance(t, OpenCLTensor) else t
         named_tensors[key] = t
@@ -206,7 +207,7 @@ def cache_build_dot_kernel(ctx, ctype_A:str, ctype_B:str, ctype_O:str, block_siz
 def _match_blocks(T, block_size):
     M, N = T.shape
     if (M % block_size != 0) or (N % block_size != 0):
-        shape = (M + block_size - M % block_size, N + block_size - N % block_size)
+        shape = (ceil(M / block_size) * block_size, ceil(N / block_size) * block_size)
         T_pad = T.device.Tensor.zeros(shape, dtype=T.dtype)
         T_pad[:M, :N] = T
         return T_pad
@@ -291,6 +292,7 @@ def reduction_kernel(T, axis:int, keepdims:bool, operation_str:str, neutral:str 
     n_iters = ceil(np.log(n_red_items) / np.log(group_size))
     # build output shape and create output tensor
     shape = tuple(s if i not in axis else 1 for i, s in enumerate(T.shape) if (i not in axis) or keepdims)
+    shape = (1,) if len(shape) == 0 else shape
     shape += (n_groups,)
     O = device.Tensor.empty(shape, dtype=T.dtype)
     # transpose to have reduction dimensions at last

@@ -43,7 +43,6 @@ class Linear(Module):
     def forward(self, x):
         return (x @ self.w + self.b) if self.b is not None else (x @ self.w)
 
-
 class Conv2d(Module):
     def __init__(self, in_channels:int, out_channels:int, kernelsize:int =3, stride:int =1, pad:int =None, bias:bool =True):
         Module.__init__(self)
@@ -51,6 +50,6 @@ class Conv2d(Module):
         self.b = Tensor.xavier((1, out_channels, 1, 1)) if bias else None
         self.s, self.p = stride, (kernelsize // 2) if pad is None else pad
     def forward(self, x):
-        y = x.__class__.conv(x.pad(self.p) if self.p > 0 else x, self.w, strides=self.s)
+        y = (x.pad(self.p) if self.p is not None else x).conv(self.w, strides=self.s)
         y = (y + self.b) if self.b is not None else y
         return y

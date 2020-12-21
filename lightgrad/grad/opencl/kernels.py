@@ -59,7 +59,8 @@ def cache_build_atom_kernel(ctx, operation_str:str, names:tuple, ctypes:tuple, o
                 )
             ])}
             // apply function
-            {ctypes[out_tensor_id]} {names[out_tensor_id]} { "= %s[%s]" % (names[out_tensor_id].upper(), idxs[out_tensor_id]) if read_out else "" };
+            {ctypes[out_tensor_id]} {names[out_tensor_id]}{
+                " = %s[%s]" % (names[out_tensor_id].upper(), idxs[out_tensor_id]) if read_out else ""};
             {operation_str};
             // save output in tensor
             {names[out_tensor_id].upper()}[{idxs[out_tensor_id]}] = {names[out_tensor_id]};
@@ -74,8 +75,6 @@ def atom_kernel(operation_str:str, out:str ="__OUT", depends_on_out:bool =True, 
     assert device is not None, "Cannot find device to use because no OpenCLTensor was provided!"
     # handle non tensor inputs
     for key, t in named_tensors.items():
-        # if not isinstance(t, (np.ndarray, OpenCLTensor, tuple, list)):
-            # print(type(t))
         t = [t] if not isinstance(t, (np.ndarray, OpenCLTensor, tuple, list)) else t
         t = np.asarray(t, dtype=dtype) if not isinstance(t, (np.ndarray, OpenCLTensor)) else t
         t = device.Tensor.from_numpy(t) if not isinstance(t, OpenCLTensor) else t
@@ -287,8 +286,7 @@ def reduction_kernel(T, axis:int, keepdims:bool, operation_str:str, neutral:str 
     # get device
     device = T.device
     # prepare axis
-    axis = tuple(range(len(T.shape))) if axis is None else axis
-    axis = axis if isinstance(axis, tuple) else (axis,)
+    axis = tuple(range(len(T.shape))) if axis is None else (axis,) if not isinstance(axis, tuple) else axis
     axis = tuple(i if i >= 0 else (len(T.shape) + i) for i in axis)
     # number of iterations needed for full reduction
     n_red_items = np.prod([T.shape[i] for i in axis])

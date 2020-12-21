@@ -43,7 +43,7 @@ class CpuTensor(Tensor):
 
     @staticmethod
     def from_numpy(a:np.ndarray, requires_grad:bool =True) -> "CpuTensor":
-        return CpuTensor(data=a, requires_grad=requires_grad)
+        return CpuTensor(data=a, dtype=a.dtype, requires_grad=requires_grad)
 
 # import operations to register them all
 # import at bottom to avoid circular import errors

@@ -1,9 +1,9 @@
-from lightgrad.autograd import Gradients, Tensor
+from lightgrad.autograd import Gradients, AbstractTensor
 
 class Optimizer(object):
     def __init__(self, parameters:iter) -> None:
         self.parameters = tuple(parameters)
-        assert all((isinstance(p, Tensor) for p in self.parameters))
+        assert all((isinstance(p, AbstractTensor) for p in self.parameters))
     def zero_grad(self) -> None:
         for p in self.parameters:
             p.zero_grad()
@@ -11,7 +11,7 @@ class Optimizer(object):
     def step(self) -> None:
         for i, p in enumerate(self.parameters):
             p += self.compute_delta(p.grad, i)
-    def compute_delta(self, grad:Tensor, idx:int) -> Tensor:
+    def compute_delta(self, grad:AbstractTensor, idx:int) -> AbstractTensor:
         raise NotImplementedError()
 
 class SGD(Optimizer):

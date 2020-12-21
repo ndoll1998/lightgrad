@@ -1,7 +1,7 @@
 import numpy as np
-from ..tensor import Tensor
+from ..tensor import AbstractTensor
 
-class CpuTensor(Tensor):
+class CpuTensor(AbstractTensor):
 
     def __init__(self, data:np.ndarray, dtype:type =np.float32, requires_grad:bool =True) -> None:
         # prepare data
@@ -14,7 +14,7 @@ class CpuTensor(Tensor):
             data = np.asarray(data, dtype=dtype)
         # check data and initialize
         assert isinstance(data, np.ndarray) and (data.dtype == dtype)
-        Tensor.__init__(self, data=data, requires_grad=requires_grad)
+        AbstractTensor.__init__(self, data=data, requires_grad=requires_grad)
 
     @property
     def dtype(self):

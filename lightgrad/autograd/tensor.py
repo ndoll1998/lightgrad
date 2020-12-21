@@ -11,10 +11,10 @@ class _TensorType(type):
         if ('__module__' in attrs) and (attrs['__module__'] != __name__):
             # register a convert for the tensor type and register it
             backend_name = attrs['__module__'].split('.')[-2]
-            Tensor.register_backend(backend_name, T)
+            AbstractTensor.register_backend(backend_name, T)
         return T
 
-class Tensor(metaclass=_TensorType):
+class AbstractTensor(metaclass=_TensorType):
 
     def __init__(self, data, requires_grad:bool =True) -> None:
         self.__data = data
@@ -24,11 +24,11 @@ class Tensor(metaclass=_TensorType):
         # expression tree context for gradient computation
         self.__ctx:Function = None
 
-    def _set_ctx(self, ctx:"Function") -> "Tensor":
+    def _set_ctx(self, ctx:"Function") -> "AbstractTensor":
         assert isinstance(ctx, Function)
         self.__ctx = ctx
         return self
-    def detach(self) -> "Tensor":
+    def detach(self) -> "AbstractTensor":
         self.__ctx = None
         return self
 
@@ -36,7 +36,7 @@ class Tensor(metaclass=_TensorType):
     def data(self):
         return self.__data
     @property
-    def grad(self) -> "Tensor":
+    def grad(self) -> "AbstractTensor":
         return self.__grad
     @property
     def requires_grad(self) -> bool:
@@ -55,28 +55,28 @@ class Tensor(metaclass=_TensorType):
         return int(np.prod(self.shape))
 
     @staticmethod
-    def empty(shape, requires_grad:bool =True) -> "Tensor":
+    def empty(shape, requires_grad:bool =True) -> "AbstractTensor":
         raise NotImplementedError()
     @staticmethod
-    def zeros(shape, requires_grad:bool =True) -> "Tensor":
+    def zeros(shape, requires_grad:bool =True) -> "AbstractTensor":
         raise NotImplementedError()
     @staticmethod
-    def ones(shape, requires_grad:bool =True) -> "Tensor":
+    def ones(shape, requires_grad:bool =True) -> "AbstractTensor":
         raise NotImplementedError()
     @staticmethod
-    def uniform(low, high, shape, requires_grad:bool =True) -> "Tensor":
+    def uniform(low, high, shape, requires_grad:bool =True) -> "AbstractTensor":
         raise NotImplementedError()
     @staticmethod
-    def from_numpy(a:np.ndarray, requires_grad:bool =True) -> "Tensor":
+    def from_numpy(a:np.ndarray, requires_grad:bool =True) -> "AbstractTensor":
         raise NotImplementedError()
 
     @classmethod
-    def xavier(cls, shape, requires_grad:bool =True) -> "Tensor":
+    def xavier(cls, shape, requires_grad:bool =True) -> "AbstractTensor":
         t = cls.uniform(-1, 1, shape=shape, requires_grad=requires_grad)
         t /= np.sqrt(t.numel())
         return t.detach()
 
-    def copy(self, requires_grad:bool =True) -> "Tensor":
+    def copy(self, requires_grad:bool =True) -> "AbstractTensor":
         raise NotImplementedError()
     def numpy(self) -> np.ndarray:
         raise NotImplementedError()
@@ -106,7 +106,7 @@ class Tensor(metaclass=_TensorType):
             nodes.update(new_nodes)
 
     @Gradients.no_grad()
-    def add_grad(self, grad:"Tensor") -> None:
+    def add_grad(self, grad:"AbstractTensor") -> None:
         # check if requires gradient
         if self.requires_grad:
             if self.grad is None:
@@ -145,11 +145,11 @@ class Tensor(metaclass=_TensorType):
     @staticmethod
     def register_backend(name:str, Tensor_cls:type):
         # check type
-        if not issubclass(Tensor_cls, Tensor):
+        if not issubclass(Tensor_cls, AbstractTensor):
             raise TypeError("Backend tensors must inherit from Tensor! (%s)" % Tensor_cls.__name__)
         # create convert dispatcher
         convert = lambda t, *args, **kwargs: Tensor_cls.from_numpy(t.numpy(), *args, **kwargs)
-        setattr(Tensor, name, convert)
+        setattr(AbstractTensor, name, convert)
 
 # imports at bottom to avoid circular import errors
 from .func import Function

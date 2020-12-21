@@ -1,6 +1,6 @@
 import numpy as np
 import pyopencl as cl
-from ..tensor import Tensor
+from ..tensor import AbstractTensor
 
 def _get_strides(shape):
     strides = np.ones(len(shape), dtype=np.int32)
@@ -8,7 +8,7 @@ def _get_strides(shape):
         strides[:i] *= d
     return tuple(strides)
 
-class __OpenCLTensorType(Tensor.__class__):
+class __OpenCLTensorType(AbstractTensor.__class__):
     def __call__(cls, data:cl.Buffer, *args, **kwargs):
         # use device tensor class from buffer context
         cls = OpenCLDevice(data.context).Tensor
@@ -17,7 +17,7 @@ class __OpenCLTensorType(Tensor.__class__):
         t.__init__(data=data, *args, **kwargs)
         return t
 
-class OpenCLTensor(Tensor, metaclass=__OpenCLTensorType):
+class OpenCLTensor(AbstractTensor, metaclass=__OpenCLTensorType):
     # opencl device to use
     # this is set by the device tensor types that inherit from this type (see device.py)
     _device = None
@@ -25,7 +25,7 @@ class OpenCLTensor(Tensor, metaclass=__OpenCLTensorType):
     def __init__(self, data:cl.Buffer, shape:tuple =(-1,), strides:tuple =None, dtype:type =np.float32, requires_grad:bool =True):
         # initialize tensor
         assert isinstance(data, cl.Buffer)
-        Tensor.__init__(self, data=data, requires_grad=requires_grad)
+        AbstractTensor.__init__(self, data=data, requires_grad=requires_grad)
         # save data type
         self.__dtype = np.dtype(dtype)
         # prepare shape

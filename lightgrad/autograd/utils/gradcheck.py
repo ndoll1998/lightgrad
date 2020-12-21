@@ -1,13 +1,13 @@
 import numpy as np
-from ..tensor import Tensor
+from ..tensor import AbstractTensor
 from ..grads import Gradients
 
-def jacobian(f, x:Tensor) -> np.ndarray:
+def jacobian(f, x:AbstractTensor) -> np.ndarray:
     # only allow tensor arguments for function
-    assert isinstance(x, Tensor) and x.requires_grad
+    assert isinstance(x, AbstractTensor) and x.requires_grad
     # get unchanged output
     y = f(x)
-    assert isinstance(y, Tensor) and y.requires_grad
+    assert isinstance(y, AbstractTensor) and y.requires_grad
     # flatten all to get jacobian matrix dimensions
     ni = x.numel()
     nj = y.numel()
@@ -25,12 +25,12 @@ def jacobian(f, x:Tensor) -> np.ndarray:
     return J
 
 @Gradients.no_grad()
-def numerical_jacobian(f, x:Tensor, eps=1e-4) -> np.ndarray:
+def numerical_jacobian(f, x:AbstractTensor, eps=1e-4) -> np.ndarray:
     # only allow tensor arguments for function
-    assert isinstance(x, Tensor)
+    assert isinstance(x, AbstractTensor)
     # get unchanged output
     y = f(x)
-    assert isinstance(y, Tensor)
+    assert isinstance(y, AbstractTensor)
     # flatten all to get jacobian matrix dimensions
     ni = x.numel()
     nj = y.numel()

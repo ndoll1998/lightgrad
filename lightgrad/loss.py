@@ -1,5 +1,5 @@
 import numpy as np
-from lightgrad.grad import Tensor, Function
+from lightgrad.autograd import Tensor, Function
 
 class mse(Function):
     """ Mean Squared Error """

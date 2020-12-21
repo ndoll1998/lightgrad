@@ -1,4 +1,4 @@
-from lightgrad.grad.func import Gradients, Tensor
+from lightgrad.autograd import Gradients, Tensor
 
 class Optimizer(object):
     def __init__(self, parameters:iter) -> None:
@@ -14,7 +14,6 @@ class Optimizer(object):
     def compute_delta(self, grad:Tensor, idx:int) -> Tensor:
         raise NotImplementedError()
 
-
 class SGD(Optimizer):
     """ Stochastic Gradient Descent """
     def __init__(self, parameters:iter, lr:float, momentum:float =0.0):
@@ -24,7 +23,6 @@ class SGD(Optimizer):
     def compute_delta(self, grad, i):
         self.prev_deltas[i] = -self.lr * grad + self.momentum * self.prev_deltas[i]
         return self.prev_deltas[i]
-
 
 class Adam(Optimizer):
     """ ADAptive Moment estimation """
@@ -41,7 +39,6 @@ class Adam(Optimizer):
         self.v[i] = self.b2 * self.v[i] + (1 - self.b2) * grad**2
         m, v = self.m[i] / (1 - self.b1**self.t), self.v[i] / (1 - self.b2**self.t)
         return -self.lr * m / (v**0.5 + self.eps)
-
 
 class AdaBelief(Adam):
     """ Adapting Stepsizes by the Belief in Observed Gradients 

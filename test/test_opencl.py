@@ -1,8 +1,8 @@
 import unittest
 # import lightgrad
-from lightgrad.grad import CpuTensor
-from lightgrad.grad import OpenCLTensor
-from lightgrad.grad.opencl import Device
+from lightgrad.autograd import CpuTensor
+from lightgrad.autograd import OpenCLTensor
+from lightgrad.autograd.opencl import Device
 # set random seed
 import numpy as np
 np.random.seed(1337)
@@ -42,12 +42,12 @@ if device.is_available():
         """ basic """
 
         def test_atom_kernel(self):
-            from lightgrad.grad.opencl.ops import atom_kernel
+            from lightgrad.autograd.opencl.ops import atom_kernel
             identity_kernel = lambda t: atom_kernel(t=t, out='o', operation_str='o=t')
             self.compare_unary_func(cpu_f=lambda t: t, opencl_f=identity_kernel)
 
         def test_atom_kernel_broadcast(self):
-            from lightgrad.grad.opencl.ops import atom_kernel
+            from lightgrad.autograd.opencl.ops import atom_kernel
             add_kernel = lambda a,b: atom_kernel(a=a, b=b, out='o', operation_str='o=a+b')
             self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(64, 64), b_shape=(1, 64))
             self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(64, 64), b_shape=(64, 1))
@@ -57,7 +57,7 @@ if device.is_available():
             self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(1, 64), b_shape=(64, 1))
 
         def test_atom_kernel_strides(self):
-            from lightgrad.grad.opencl.ops import atom_kernel
+            from lightgrad.autograd.opencl.ops import atom_kernel
             identity_kernel = lambda t: atom_kernel(t=t, out='o', operation_str='o=t')
             self.compare_unary_func(cpu_f=lambda t: t, opencl_f=identity_kernel, transpose=True)
 

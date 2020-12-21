@@ -1,8 +1,8 @@
 import unittest
 # import lightgrad
-from lightgrad.grad import OpenCLTensor
-from lightgrad.grad.opencl import Device
-from lightgrad.grad.utils.gradcheck import assert_gradcheck
+from lightgrad.autograd import OpenCLTensor
+from lightgrad.autograd.opencl import Device
+from lightgrad.autograd.utils.gradcheck import assert_gradcheck
 # set random seed
 import numpy as np
 np.random.seed(1337)

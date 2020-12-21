@@ -1,7 +1,7 @@
 import unittest
 # import lightgrad
-from lightgrad.grad import Tensor
-from lightgrad.grad.utils.gradcheck import assert_gradcheck
+from lightgrad.autograd import Tensor
+from lightgrad.autograd.utils.gradcheck import assert_gradcheck
 # set random seed
 import numpy as np
 np.random.seed(1337)

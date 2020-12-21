@@ -8,10 +8,10 @@ from tqdm import trange
 from lightgrad import nn
 from lightgrad.loss import cross_entropy, mse
 from lightgrad.optim import AdaBelief
-from lightgrad.utils.data import MNIST_Train, MNIST_Test
+from lightgrad.data import MNIST_Train, MNIST_Test
 
-from lightgrad.grad import Tensor
-from lightgrad.grad.utils.profiler import Profiler
+from lightgrad.autograd import Tensor
+from lightgrad.autograd.utils.profiler import Profiler
 
 class CNN(nn.Module):
     def __init__(self):

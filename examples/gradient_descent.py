@@ -2,7 +2,7 @@ import sys
 sys.path.insert(0, "../")
 import numpy as np
 import matplotlib.pyplot as plt
-from lightgrad.grad import Tensor
+from lightgrad.autograd import Tensor
 from lightgrad.optim import SGD
 
 if __name__ == '__main__':

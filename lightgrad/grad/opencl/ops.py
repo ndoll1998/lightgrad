@@ -357,11 +357,20 @@ class __setitem(Function):
 """ Reductions """
 
 @OpenCLTensor.register_op("sum")
-@OpenCLTensor.register_op("mean")   # TODO
 class _sum(Function):
     def forward(ctx, t, axis:int =None, keepdims:bool =False):
         return reduction_kernel(t, axis=axis, keepdims=keepdims, operation_str='a + b')
 
+@OpenCLTensor.register_op("mean")
+class mean(Function):
+    def forward(ctx, t, axis:int =None, keepdims:bool =False):
+        # compute sum
+        sum_out = t.sum(axis=axis, keepdims=keepdims)
+        # divide inplace to avoid allocation of new memory
+        axis = tuple(range(len(t.shape))) if axis is None else (axis,) if not isinstance(axis, tuple) else axis
+        sum_out /= np.prod([t.shape[i] for i in axis])
+        return sum_out
+        
 @OpenCLTensor.register_op()
 class max(Function):
     def forward(ctx, t, axis:int =None, keepdims:bool =False):

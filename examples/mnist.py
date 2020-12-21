@@ -38,17 +38,17 @@ class NN(nn.Module):
 if __name__ == '__main__':
 
     # device
-    to_device = lambda t: t.opencl()
+    to_device = lambda t: t #.opencl()
     # load datasets
     mnist_train = MNIST_Train(shuffle=True, batchsize=128)
     mnist_test = MNIST_Test(shuffle=False, batchsize=128)
     # create model
-    model = NN().map_params(to_device)
+    model = CNN().map_params(to_device)
     optim = AdaBelief(model.parameters(), lr=0.001)
 
     steps = 200
     # train model
-    with Profiler:
+    with Profiler() as p:
         losses = []
         pbar = trange(steps)
         for i in pbar:
@@ -70,8 +70,8 @@ if __name__ == '__main__':
             losses.append(l.item())
             pbar.set_postfix({'loss': sum(losses[-100:]) / min(100, len(losses))})
 
-    print("\n")
-    Profiler.print()
+        print("\n")
+        p.print()
 
     # evaluate model
     total_hits = 0

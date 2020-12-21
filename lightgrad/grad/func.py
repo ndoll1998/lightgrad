@@ -1,5 +1,5 @@
 from .grads import Gradients
-from .utils.profiler import Profiler
+from .utils.profiler import Tracker
 from typing import Tuple
 
 class __FunctionMeta(type):
@@ -14,7 +14,7 @@ class __FunctionMeta(type):
         tensor_type = tensors[0].__class__
         assert all((isinstance(t, tensor_type) for t in tensors[1:])), "All Tensors must be of the same type! %s" % str(tuple(t.__class__.__name__ for t in tensors))
         # apply function
-        with Profiler.profile(cls.__name__), Gradients.no_grad():
+        with Tracker(cls.__name__), Gradients.no_grad():
             out_tensor = f.forward(*args, **kwargs)
             assert isinstance(out_tensor, Tensor)
         # set context of output tensor
@@ -37,7 +37,7 @@ class Function(object, metaclass=__FunctionMeta):
     def _backpropagate(self, out_grad) -> Tuple["Tensor"]:
         tensor_type = out_grad.__class__
         # propagate backwards
-        with Profiler.profile(self.__class__.__name__, backward=True):
+        with Tracker(self.__class__.__name__, backward=True):
             in_grads = self.backward(out_grad)
             in_grads = in_grads if isinstance(in_grads, tuple) else (in_grads,)
         # accumulate gradients in parent tensors

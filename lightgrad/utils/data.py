@@ -35,16 +35,18 @@ class Dataset(object):
 """ MNIST Dataset """
 
 def _fetch(url):
-  import requests, os, hashlib, tempfile
-  fp = os.path.join(tempfile.gettempdir(), hashlib.md5(url.encode('utf-8')).hexdigest())    
-  if os.path.isfile(fp):
-    with open(fp, "rb") as f:
-      dat = f.read()
-  else:
-    with open(fp, "wb") as f:
-      dat = requests.get(url).content
-      f.write(dat)
-  return dat
+    import requests, os, hashlib, tempfile
+    fp = os.path.join(tempfile.gettempdir(), hashlib.md5(url.encode('utf-8')).hexdigest())
+    if os.path.isfile(fp) and os.stat(fp).st_size > 0:
+        with open(fp, "rb") as f:
+            dat = f.read()
+    else:
+        print("fetching %s" % url)
+        dat = requests.get(url).content
+        with open(fp+".tmp", "wb") as f:
+            f.write(dat)
+        os.rename(fp+".tmp", fp)
+    return dat
 
 class MNIST_Train(Dataset):
     def __init__(self, n:int =60_000, **kwargs):

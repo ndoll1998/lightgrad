@@ -67,7 +67,7 @@ class Tensor(metaclass=_TensorType):
     def uniform(low, high, shape, requires_grad:bool =True) -> "Tensor":
         raise NotImplementedError()
     @staticmethod
-    def from_numpy(a:np.ndarray, requires_grad:bool =True):
+    def from_numpy(a:np.ndarray, requires_grad:bool =True) -> "Tensor":
         raise NotImplementedError()
 
     @classmethod

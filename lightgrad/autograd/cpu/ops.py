@@ -256,9 +256,9 @@ class relu(Function):
 @CpuTensor.register_op()
 @_use_tensor_data
 class softmax(Function):
-    def forward(ctx, t, dim:int =-1):
-        exps = np.exp(t - np.max(t, axis=dim, keepdims=True))
-        return exps / np.sum(exps, axis=dim, keepdims=True)
+    def forward(ctx, t, axis:int =-1):
+        exps = np.exp(t - np.max(t, axis=axis, keepdims=True))
+        return exps / np.sum(exps, axis=axis, keepdims=True)
     # TODO: backward
 
 

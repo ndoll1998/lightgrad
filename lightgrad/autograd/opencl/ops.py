@@ -305,9 +305,9 @@ class relu(Function):
 
 @OpenCLTensor.register_op()
 class softmax(Function):
-    def forward(ctx, t, dim:int =-1):
-        exps = (t - t.max(axis=dim, keepdims=True)).exp()
-        return exps / exps.sum(axis=dim, keepdims=True)
+    def forward(ctx, t, axis:int =-1):
+        exps = (t - t.max(axis=axis, keepdims=True)).exp()
+        return exps / exps.sum(axis=axis, keepdims=True)
 
 """ Selectors """
 

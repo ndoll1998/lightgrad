@@ -25,10 +25,6 @@ class Embedding(nn.Module):
         self.weight = Tensor.xavier((vocab_size, embedding_dim))
     def forward(self, ids):
         return self.weight[ids, :]
-    def load_parameters(self, param_dict, prefix, separator):
-        key = prefix + separator + 'weight'
-        param_dict[key] = param_dict[key].reshape(self.weight.shape)
-        nn.Module.load_parameters(self, param_dict, prefix, separator)
         
 class BertEmbedding(nn.Module):
     def __init__(self,

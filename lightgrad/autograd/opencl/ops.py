@@ -18,6 +18,7 @@ def _bi_reverse(f):
 """ Transformations """
 
 @OpenCLTensor.register_op()
+@OpenCLTensor.register_op("T")
 class transpose(Function):
     def forward(ctx, a, *axes):
         assert len(axes) == len(a.shape)
@@ -321,9 +322,8 @@ def _idx_view(a, idx):
     strides = tuple(st for i, st in zip(idx, a.strides) if isinstance(i, slice))
     assert len(idx) == len(a.shape) == len(a.strides)
     # get start byte position
-    idx_start = tuple(i.start if isinstance(i, slice) else i for i in idx)
-    idx_start = np.asarray(idx_start, dtype=np.int32)
-    byte_start = (idx_start * np.asarray(a.strides, dtype=np.int32)).sum() * a.dtype.itemsize
+    idx_start = np.asarray(tuple(i.start if isinstance(i, slice) else i for i in idx), dtype=np.int32)
+    byte_start = (idx_start * np.asarray(a.strides, np.int32)).sum() * a.dtype.itemsize
     # create sliced tensor
     return OpenCLTensor(a.data[byte_start:], shape=shape, strides=strides, dtype=a.dtype)
 

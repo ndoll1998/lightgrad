@@ -33,10 +33,14 @@ def load_torch_state_dict(bytes_):
     key_prelookup = {}
     class TorchTensor:
         def __new__(cls, *args):
-            ident, storage_type, obj_key, location, obj_size, view_metadata = args[0]
+            ident, dtype, obj_key, _, obj_size, _ = args[0]
             assert ident == 'storage'
-            tensor = np.zeros(obj_size, dtype=storage_type)
-            key_prelookup[obj_key] = (storage_type, obj_size, tensor, args[2], args[3])
+            # handle reoccuring objects
+            if obj_key in key_prelookup:
+                return key_prelookup[obj_key][0]
+            # create tensor and add to lookup
+            tensor = np.empty(obj_size, dtype=dtype)
+            key_prelookup[obj_key] = (tensor, args[2], args[3])
             return tensor
 
     class TorchUnpickler(pickle.Unpickler):
@@ -50,19 +54,22 @@ def load_torch_state_dict(bytes_):
             return pid
 
     ret = TorchUnpickler(fb0).load()
+
     # create key_lookup
     key_lookup = pickle.load(fb0)
     key_real = [None] * len(key_lookup)
     for k,v in key_prelookup.items():
         key_real[key_lookup.index(k)] = v
+
     # read in the actual data
-    for storage_type, obj_size, np_array, np_shape, np_strides in key_real:
+    for t, shape, strides in key_real:
         ll = struct.unpack("Q", fb0.read(8))[0]
-        assert ll == obj_size
-        bytes_size = {np.float32: 4, np.int64: 8}[storage_type]
-        mydat = fb0.read(ll * bytes_size)
-        np_array[:] = np.frombuffer(mydat, storage_type)
-        np_array.shape = np_shape
-        real_strides = tuple([x*bytes_size for x in np_strides])
-        np_array.strides = real_strides
+        assert (ll,) == t.shape
+        # read actual data
+        data = fb0.read(ll * t.dtype.itemsize)
+        t[:] = np.frombuffer(data, t.dtype)
+        # shape and strides
+        t.shape = shape
+        t.strides = tuple((st * t.dtype.itemsize for st in strides))
+
     return ret

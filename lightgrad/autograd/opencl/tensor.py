@@ -99,7 +99,7 @@ class OpenCLTensor(AbstractTensor, metaclass=__OpenCLTensorType):
     def copy(self, requires_grad:bool =True) -> "OpenCLTensor":
         if self.is_contiguous:
             o = self.device.Tensor.empty(self.shape, dtype=self.dtype, requires_grad=requires_grad)
-            cl.enqueue_copy(self.device.queue, o.data, self.data, byte_count=o.numel())
+            cl.enqueue_copy(self.device.queue, o.data, self.data, byte_count=o.numel() * self.dtype.itemsize)
         else:
             # create contiguous copy of self
             o = self.contiguous()

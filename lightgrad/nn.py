@@ -34,7 +34,16 @@ class Module(object):
         # yield parameters of submodules
         for m in self.__modules.values():
             yield from m.parameters()
-    
+
+    def named_parameters(self, prefix:str ="", separator:str =".") -> iter:
+        prefix = (prefix + separator) if len(prefix) > 0 else ""
+        # yield my parameters with names
+        for name, p in self.__paramters.items():
+            yield (prefix + name, p)
+        # yield parameters with names of submodules
+        for name, m in self.__modules.items():
+            yield from m.named_parameters(prefix=prefix + name, separator=separator)
+
     def map_params(self, fn):
         # map parameters
         for key, tensor in self.__paramters.items():
@@ -45,7 +54,8 @@ class Module(object):
             m.map_params(fn)
         return self
 
-    def load_params(self, param_dict:dict, prefix:str ="", separator:str ='.'):
+    def load_params(self, param_dict:dict, prefix:str ="", separator:str ='.') -> None:
+        param_dict = dict(param_dict)
         if len(prefix) > 0:
             prefix += separator
         # load all my parameters

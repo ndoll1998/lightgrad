@@ -55,13 +55,14 @@ class Module(object):
         return self
 
     def load_parameters(self, param_dict:dict, prefix:str ="", separator:str ='.') -> None:
+        param_dict = dict(param_dict)
         if len(prefix) > 0:
             prefix += separator
         # load all my parameters
         for key, p in self.__paramters.items():
             # find parameter in dict
             assert (prefix + key) in param_dict, "%s not found in param dict!" % (prefix + key)
-            new_p = param_dict.pop(prefix + key)
+            new_p = param_dict[prefix + key]
             # load in parameter
             if not isinstance(new_p, p.__class__):
                 new_p = new_p.numpy() if isinstance(new_p, AbstractTensor) else new_p

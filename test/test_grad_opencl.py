@@ -102,7 +102,7 @@ if device.is_available():
                     return y
             # create cpu and opencl model with same parameters
             cpu_model, opencl_model = Model(), Model()
-            opencl_model.load_params(cpu_model.named_parameters())
+            opencl_model.load_parameters(cpu_model.named_parameters())
             opencl_model.map_params(lambda p: p.opencl())
             # forward
             x = CpuTensor.uniform(-1, 1, (4, 8), dtype=np.float32)

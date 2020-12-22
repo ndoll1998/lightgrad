@@ -54,15 +54,14 @@ class Module(object):
             m.map_params(fn)
         return self
 
-    def load_params(self, param_dict:dict, prefix:str ="", separator:str ='.') -> None:
-        param_dict = dict(param_dict)
+    def load_parameters(self, param_dict:dict, prefix:str ="", separator:str ='.') -> None:
         if len(prefix) > 0:
             prefix += separator
         # load all my parameters
         for key, p in self.__paramters.items():
             # find parameter in dict
             assert (prefix + key) in param_dict, "%s not found in param dict!" % (prefix + key)
-            new_p = param_dict[prefix + key]
+            new_p = param_dict.pop(prefix + key)
             # load in parameter
             if not isinstance(new_p, p.__class__):
                 new_p = new_p.numpy() if isinstance(new_p, AbstractTensor) else new_p
@@ -72,7 +71,8 @@ class Module(object):
             self.__setattr__(key, new_p)
         # load sub-module parameters
         for key, m in self.__modules.items():
-            m.load_params(param_dict, prefix=prefix + key, separator=separator)
+            sub_param_dict = {n: p for n, p in param_dict.items() if n.startswith(prefix + key)}
+            m.load_parameters(param_dict, prefix=prefix + key, separator=separator)
 
 class ModuleList(Module, list):
     def __init__(self, *elements):
@@ -104,3 +104,20 @@ class Conv2d(Module):
         y = (x.pad(self.p) if self.p > 0 else x).conv(self.w, strides=self.s)
         y = (y + self.b) if self.b is not None else y
         return y
+
+class LayerNorm(Module):
+    def __init__(self, shape:tuple, eps:float =1e-5):
+        Module.__init__(self)
+        self.shape = tuple(shape) if isinstance(shape, (tuple, list)) else (shape,) 
+        self.eps = eps
+        # weight and bias
+        self.weight = Tensor.ones(self.shape)
+        self.bias = Tensor.zeros(self.shape)
+    def forward(self, x):
+        assert x.shape[-len(self.shape):] == self.shape, "Shape mismatch in layer norm! (%s <-> %s)" % (x.shape, self.shape)
+        axes = tuple(range(len(x.shape) - len(self.shape), len(x.shape)))
+        # compute mean and variance
+        D = x - x.mean(axis=axes, keepdims=True)
+        V = (D * D).mean(axis=axes, keepdims=True)
+        # normalize
+        return D / (V + self.eps).pow(1/2) * self.weight + self.bias

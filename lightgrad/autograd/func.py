@@ -46,9 +46,13 @@ class Function(object, metaclass=__FunctionMeta):
                 assert g is not None
                 # reverse broadcast gradient shape
                 if g.shape != t.shape:
-                    broadcast_idx = tuple(i for i, (x, y) in enumerate(zip(t.shape, g.shape)) if x != y)
-                    assert all((t.shape[i] == 1 for i in broadcast_idx)), "Cannot broadcast shapes %s and %s" % (t.shape, g.shape)
+                    assert len(g.shape) >= len(t.shape), "Cannot unbroadcast shapes %s and %s" % (t.shape, g.shape)
+                    d = len(g.shape) - len(t.shape)
+                    broadcast_idx = tuple(range(d))
+                    broadcast_idx += tuple(d + i for i, (x, y) in enumerate(zip(t.shape, g.shape[d:])) if x != y)
                     g = g.sum(axis=broadcast_idx, keepdims=True)
+                    g = g.reshape(*g.shape[d:])
+                assert g.shape == t.shape
                 # add gradient
                 t.add_grad(g)
         # return input gradients

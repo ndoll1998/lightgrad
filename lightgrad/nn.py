@@ -79,23 +79,10 @@ class ModuleList(Module, list):
 class Linear(Module):
     def __init__(self, in_feats:int, out_feats:int, bias:bool =True):
         Module.__init__(self)
-        self.weight = Tensor.xavier((in_feats, out_feats))
+        self.weight = Tensor.xavier((out_feats, in_feats))
         self.bias = Tensor.xavier((out_feats,)) if bias else None
     def forward(self, x):
-        return (x @ self.weight + self.bias) if self.bias is not None else (x @ self.weight)
-    def load_params(self, param_dict:dict, prefix:str, separator:str):
-        # pytorch uses transposed weights - we dont :(
-        w_key = (prefix + separator + 'weight') if len(prefix) > 0 else 'weight'
-        assert w_key in param_dict, "%s not found in param dict!" % (w_key)
-        weight = param_dict[w_key]
-        # check if is transposed
-        is_transposed = (weight.shape[0] == self.weight.shape[1]) and (weight.shape[1] == self.weight.shape[0])
-        self.weight = self.weight.transpose(1, 0) if is_transposed else self.weight
-        # load parameters in and reverse transposition if necessary
-        Module.load_params(self, param_dict, prefix=prefix, separator=separator)
-        if is_transposed:
-            self.weight = self.weight.transpose(1, 0)
-            self.weight = self.weight.contiguous() if hasattr(self.weight, 'contiguous') else self.weight
+        return (x @ self.weight.T(1, 0) + self.bias) if self.bias is not None else (x @ self.weight.T(1, 0))
 
 class Conv2d(Module):
     def __init__(self, in_channels:int, out_channels:int, kernelsize:int =3, stride:int =1, pad:int =None, bias:bool =True):

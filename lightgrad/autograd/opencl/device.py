@@ -19,6 +19,8 @@ class OpenCLDevice(object):
     __queues = {}     # queues are unique for each context
     # all populated device tensor types
     __tensor_types = {}
+    # all populated memory pools
+    __memory_pools = {}
 
     def __init__(self, context_or_deviceId:Union[int, cl.Context], device_type:int =cl.device_type.ALL):
         # create or find context
@@ -40,10 +42,14 @@ class OpenCLDevice(object):
                 ctx = OpenCLDevice.__contexts[device]
                 queue = OpenCLDevice.__queues[device]
                 tensor_type = OpenCLDevice.__tensor_types[device]
+                mem_pool = OpenCLDevice.__memory_pools[device]
             else:
                 # not yet populated context
                 ctx = cl.Context([device])
                 queue = cl.CommandQueue(ctx)
+                # create memory pool
+                allocator = cl.tools.ImmediateAllocator(queue)
+                mem_pool = cl.tools.MemoryPool(allocator)
                 # create device tensor type
                 name = "%s(%s:%i)" % (OpenCLTensor.__name__, _DEVICE_MAP[device.type], len(OpenCLDevice.__contexts))
                 tensor_type = type(name, (OpenCLTensor,), {'_device': self})
@@ -51,6 +57,7 @@ class OpenCLDevice(object):
                 OpenCLDevice.__contexts[device] = ctx
                 OpenCLDevice.__queues[device] = cl.CommandQueue(ctx)
                 OpenCLDevice.__tensor_types[device] = tensor_type
+                OpenCLDevice.__memory_pools[device] = mem_pool
         else:
             # We assume that the provided context was populated
             # and thus also queue and tensor-type
@@ -58,10 +65,12 @@ class OpenCLDevice(object):
             device = ctx.devices[0]
             queue = OpenCLDevice.__queues[device]
             tensor_type = OpenCLDevice.__tensor_types[device]
+            mem_pool = OpenCLDevice.__memory_pools[device]
         # save context and queue
         self.__tensor_type = tensor_type
         self.__ctx = ctx
         self.__queue = queue
+        self.__mem_pool = mem_pool
 
     def is_available(self) -> bool:
         return self.__ctx is not None
@@ -78,6 +87,10 @@ class OpenCLDevice(object):
     def Tensor(self) -> type:
         assert self.is_available(), "Device is not available!"
         return self.__tensor_type
+    @property
+    def mem_pool(self) -> cl.tools.MemoryPool:
+        assert self.is_available(), "Device is not available!"
+        return self.__mem_pool
 
     @staticmethod
     def any(device_type:int =cl.device_type.ALL) -> "OpenCLDevice":

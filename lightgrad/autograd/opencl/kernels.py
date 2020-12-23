@@ -9,41 +9,45 @@ from math import ceil
 def cache_build_kernel(ctx, source):
     return cl.Program(ctx, source).build()
 
-def _stride_args_source(*names):
-    return f""",
-            {', '.join(["__global uint* %(name)s_strides" % {'name': n.upper()} for n in names])},
-            __global const uint* shape,
-            const uint dim"""
-
-def _stride_idx_source(*names, flat_id="get_global_id(0)", flat_size="get_global_size(0)"):
-    nl = '\n'
-    idxs = ["%(name)s_idx" % {'name': n.upper()} for n in names]
-    idx_init = "uint " + ', '.join(["%(idx_name)s = 0" % {'idx_name': n} for n in idxs]) + ";"
+def _stride_idx_source(*names, 
+    dim="dim",
+    flat_id="get_global_id(0)", 
+    flat_size="get_global_size(0)",
+    get_cur_dim=lambda d: f"shape[{d}]",
+    get_cur_stride=lambda name, i, d: f"strides[{i} * dim + {d}]"
+):
+    nl, idxs = '\n', ["%(name)s_idx" % {'name': n.upper()} for n in names]
     # strided index calculation source code
-    return f"""{idx_init}
-            uint _flat_size = {flat_size};
-            // get indices for tensors
-            for (int d=0; d < dim; ++d) {{
-                _flat_size /= shape[d];
-                uint k = ({flat_id} / _flat_size) % shape[d];
-                // update array indices
-                {(nl + " "*16).join([
-                    f"{idx} += k * {n.upper()}_strides[d];"
-                    for n, idx in zip(names, idxs)
-                ])}
+    return f"""{"uint " + ', '.join(["%(idx_name)s = 0" % {'idx_name': n} for n in idxs]) + ";"}
+            {{
+                uint contiguous_stride = {flat_size};
+                // get indices for tensors
+                for (int d=0; d < dim; ++d) {{
+                    const uint s = {get_cur_dim('d')};
+                    contiguous_stride /= s;
+                    const uint k = ({flat_id} / contiguous_stride) % s;
+                    // update array indices
+                    {(nl + " "*20).join([
+                        f"{idx} += k * {get_cur_stride(names[i], i, 'd')};"
+                        for i, idx in enumerate(idxs)
+                    ])}
+                }}
             }}"""
 
 @functools.lru_cache()
 def cache_build_atom_kernel(ctx, operation_str:str, names:tuple, ctypes:tuple, out_tensor_id:int, use_strides:bool, read_out:bool):
     assert len(names) == len(ctypes)
-    # build arguments and variable names to index tensors
-    tensor_args = ["__global %(type)s* %(name)s" % {'type': c, 'name': n.upper()} for n, c in zip(names, ctypes)]    
-    idxs = ["%(name)s_idx" % {'name': n.upper()} for n in names] if use_strides else ("i" * len(names))
+    # build arguments
+    tensor_args = [f"__global {ctype}* {name.upper()}" for name, ctype in zip(names, ctypes)]
+    offset_args = [f"const uint {name.upper()}_off" for name in names]
+    stride_args = ["const __global uint* strides", "const __global uint* shape", "const uint dim"] if use_strides else []
+    # buffer indices with offsets
+    idxs = [f"{name.upper()}_idx + {name.upper()}_off" for name in names] if use_strides else [f"i + {n.upper()}_off" for n in names]
     # build program source
     nl = "\n"
     source = f"""
         __kernel void atom(
-            {', '.join(tensor_args)}{_stride_args_source(*names) if use_strides else ""}
+            {', '.join(tensor_args + offset_args + stride_args)}
         ) {{
             // get worker information
             const uint i = get_global_id(0);
@@ -66,72 +70,71 @@ def cache_build_atom_kernel(ctx, operation_str:str, names:tuple, ctypes:tuple, o
             {names[out_tensor_id].upper()}[{idxs[out_tensor_id]}] = {names[out_tensor_id]};
         }}
     """
-    return cl.Program(ctx, source).build()
+    return cl.Program(ctx, source).build().atom
 
 def atom_kernel(operation_str:str, out:str ="__OUT", depends_on_out:bool =True, **named_tensors):
     # get device to use
-    t = next((t for t in named_tensors.values() if isinstance(t, OpenCLTensor)), None)
-    device, dtype = t.device, t.dtype
-    assert device is not None, "Cannot find device to use because no OpenCLTensor was provided!"
+    t0 = next((t for t in named_tensors.values() if isinstance(t, OpenCLTensor)), None)
+    assert t0 is not None, "No OpenCLTensor was provided!"
+    device = t0.device
     # handle non tensor inputs
-    for key, t in named_tensors.items():
+    for k, t in named_tensors.items():
         t = [t] if not isinstance(t, (np.ndarray, OpenCLTensor, tuple, list)) else t
-        t = np.asarray(t, dtype=dtype) if not isinstance(t, (np.ndarray, OpenCLTensor)) else t
+        t = np.asarray(t, dtype=t0.dtype) if not isinstance(t, (np.ndarray, OpenCLTensor)) else t
         t = device.Tensor.from_numpy(t) if not isinstance(t, OpenCLTensor) else t
-        named_tensors[key] = t
-    # prepare
-    names = tuple(sorted(named_tensors))       # make sure the order is always the same to reduce compilations
-    tensors = tuple(named_tensors[n] for n in names)
-    ctypes = tuple(dtype_to_ctype(t.dtype) for t in tensors)
-    # broadcast shapes
-    dim = max([len(t.shape) for t in tensors])
-    shapes = []
-    for t in tensors:
-        shape = np.ones(dim, dtype=np.int32)
-        if len(t.shape) > 0:
-            shape[-len(t.shape):] = t.shape
-        shapes.append(shape)
-    shape = np.maximum(*shapes) if len(shapes) > 1 else shapes[0]
-    assert all([np.all((s == 1) | (s == shape)) for s in shapes]), "Cannot broadcast shapes!"
+        named_tensors[k] = t
+    # separate names and tensors
+    names, tensors = zip(*named_tensors.items())
+    names, tensors = tuple(names), tuple(tensors)
+    # broadcast shape
+    dim = max((len(t.shape)) for t in tensors)
+    shapes = [(1,) * (dim - len(t.shape)) + t.shape for t in tensors]
+    shapes = np.array(shapes, dtype=np.int32)
+    shape = np.max(shapes, axis=0)
+    assert (shapes[shapes != shape] == 1).all(), "Cannot broadcast shapes!"
+    # build broadcasted strides
+    strides = [(0,) * (dim - len(t.strides)) + t.strides for t in tensors]
+    strides = np.array(strides, dtype=np.int32)
+    strides[shapes != shape] = 0
     # create output tensor
     if out not in names:
-        # TODO: broadcast dtype
-        out_dtype = tensors[0].dtype
+        # TODO: output dtype depends on combination input dtypes
+        out_dtype = t0.dtype
         out_tensor = device.Tensor.empty(shape, dtype=out_dtype)
-        # add output tensor
+        out_id = len(names)
+        # add to tuples
         names += (out,)
         tensors += (out_tensor,)
-        shapes += (shape,)
-        ctypes += (dtype_to_ctype(out_dtype),)
-        # cannot depend on output since it was just created
+        # add output strides
+        strides = np.vstack((strides, out_tensor.strides))
+        # cannot depend on output because output tensor is empty
         depends_on_out = False
     else:
-        out_tensor = tensors[names.index(out)]
-    # broadcast strides
-    all_strides = []
-    for t, s in zip(tensors, shapes):
-        k = len(t.shape)
-        strides = np.zeros(dim, dtype=np.int32)
-        if k > 0:
-            mask = (s[-k:] == shape[-k:])
-            strides[-k:][mask] = np.asarray(t.strides, dtype=np.int32)[mask]
-        all_strides.append(strides)
-    # collect data buffers
+        # get output id and tensor
+        out_id = names.index(out)
+        out_tensor = tensors[out_id]
+        # make sure we can broadcast to output tensor
+        assert (out_tensor.shape == shape).all, "Output tensor shape does not match broadcast shape! (%s != %s)" % (out_tensor.shape, tuple(shape))
+    # collect data buffers and ctypes
     datas = tuple(t.data for t in tensors)
-    # check if strides are necessary
-    if any((st1 != st2).any() for st1, st2 in zip(all_strides[1:], all_strides[:-1])):
+    offsets = tuple(np.int32(t.offset) for t in tensors)
+    ctypes = tuple(dtype_to_ctype(t.dtype) for t in tensors)
+    # check if strides all strides are equal
+    if np.logical_and.reduce(strides[0, :] == strides[1:, :], axis=0).all():
+        # kernel does not need to consider strides in this case
+        knl = cache_build_atom_kernel(device.ctx, operation_str, names, ctypes, names.index(out), use_strides=False, read_out=depends_on_out)
+        knl.set_args(*datas, *offsets)
+    else:
         # build kernel input buffers
         shape = cl.Buffer(device.ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=shape)
-        strides = tuple(cl.Buffer(device.ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=st) for st in all_strides)
-        # build program and apply
-        prg = cache_build_atom_kernel(device.ctx, operation_str, names, ctypes, names.index(out), use_strides=True, read_out=depends_on_out)
-        prg.atom(device.queue, [out_tensor.numel()], None, *datas, *strides, shape, np.int32(dim))
-    else:
-        # build program and apply
-        prg = cache_build_atom_kernel(device.ctx, operation_str, names, ctypes, names.index(out), use_strides=False, read_out=depends_on_out)
-        prg.atom(device.queue, [out_tensor.numel()], None, *datas)
-    # wait until operation is finished
+        strides = cl.Buffer(device.ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=strides)
+        # get kernel and set arguments
+        knl = cache_build_atom_kernel(device.ctx, operation_str, names, ctypes, names.index(out), use_strides=True, read_out=depends_on_out)
+        knl.set_args(*datas, *offsets, strides, shape, np.int32(dim))
+    # enqueue and wait until finished
+    cl.enqueue_nd_range_kernel(device.queue, knl, [out_tensor.numel()], None)
     device.queue.finish()
+    # return output tensor
     return out_tensor
 
 
@@ -146,6 +149,8 @@ def cache_build_dot_kernel(ctx, ctype_A:str, ctype_B:str, ctype_O:str, block_siz
             const __global {ctype_A}* A,
             const __global {ctype_B}* B,
             __global {ctype_O}* O,
+            uint A_off,
+            uint B_off,
             const uint M,
             const uint N,
             const uint K
@@ -170,15 +175,15 @@ def cache_build_dot_kernel(ctx, ctype_A:str, ctype_B:str, ctype_O:str, block_siz
                 for (int wj=0; wj < WPT; wj++)
                     acc[wi][wj] = 0;
 
-            // read offsets
-            const uint Aoff = bi * TS * K;
-            const uint Boff = bj * TS;
+            // offsets
+            A_off += bi * TS * K;
+            B_off += bj * TS;
             
             for (int t = 0; t < K; t+=RTS) {{                
                 // load tile into local memory
                 for (int r = 0; r < TS; r+=RTS) {{
-                    Asub[lj][r+li] = A[Aoff + (r + li) * K + t + lj];
-                    Bsub[lj][r+li] = B[Boff + (lj + t) * N + r + li];
+                    Asub[lj][r+li] = A[A_off + (r + li) * K + t + lj];
+                    Bsub[lj][r+li] = B[B_off + (lj + t) * N + r + li];
                 }}
                 // wait until all loaded
                 barrier(CLK_LOCAL_MEM_FENCE);
@@ -205,7 +210,7 @@ def cache_build_dot_kernel(ctx, ctype_A:str, ctype_B:str, ctype_O:str, block_siz
                 for (int wj = 0; wj < WPT; wj++)
                     O[(i + wj*RTS) * N + (j + wi*RTS)] = acc[wi][wj];
         }}
-    """).build()
+    """).build().matmul
 
 def _match_blocks(T, block_size):
     M, N = T.shape
@@ -234,8 +239,11 @@ def dot_kernel(A, B, block_size:int =128, work_per_thread:int =8):
     ctype_O = dtype_to_ctype(O.dtype)
     # build and call kernel
     global_shape, local_shape = [pad_M // work_per_thread, pad_N // work_per_thread], [block_size // work_per_thread] * 2
-    prg = cache_build_dot_kernel(device.ctx, ctype_A, ctype_B, ctype_O, block_size, work_per_thread)
-    prg.matmul(device.queue, global_shape, local_shape, A.contiguous().data, B.contiguous().data, O.data, pad_M, pad_N, pad_K)
+    knl = cache_build_dot_kernel(device.ctx, ctype_A, ctype_B, ctype_O, block_size, work_per_thread)
+    knl(device.queue, global_shape, local_shape, 
+            A.contiguous().data, B.contiguous().data, O.data, 
+            np.int32(A.offset), np.int32(B.offset),
+            pad_M, pad_N, pad_K)
     device.queue.finish()
     # remove padding from output
     return (O if (M, N) == (pad_M, pad_N) else O[:M, :N])
@@ -243,12 +251,17 @@ def dot_kernel(A, B, block_size:int =128, work_per_thread:int =8):
 
 @functools.lru_cache()
 def cache_build_reduction_kernel(ctx, operation_str:str, ctype:str, neutral:str, use_strides:bool):
+    # additional arguments list
+    stride_args = ["__global uint* strides", "__global uint* shape", "uint dim"] if use_strides else []
+    nl = '\n'
+    # build kernel
     return cl.Program(ctx, f"""
         __kernel void reduce(
             uint n_red_items,
             __global {ctype}* T,
             __global {ctype}* O,
-            __local {ctype}* loc_buf{_stride_args_source("T") if use_strides else ""}
+            __local {ctype}* loc_buf,
+            const uint T_off{(',' + nl + ' ' * 12).join([""] + stride_args)}
         ) {{
             uint gi = get_global_id(0);
             uint gj = get_global_id(1);
@@ -262,11 +275,12 @@ def cache_build_reduction_kernel(ctx, operation_str:str, ctype:str, neutral:str,
             {
                 _stride_idx_source("T", 
                     flat_id="i",
-                    flat_size="get_global_size(0) * n_red_items"
+                    flat_size="get_global_size(0) * n_red_items",
+                    get_cur_stride=lambda n, i, d: f"strides[{d}]"
                 ) if use_strides else "uint T_idx = i;"
             }
             // load to local memory
-            loc_buf[lj] = (gj < n_red_items)? T[T_idx] : {neutral};
+            loc_buf[lj] = (gj < n_red_items)? T[T_off + T_idx] : {neutral};
             barrier(CLK_LOCAL_MEM_FENCE);
             // reduce
             for(uint s = group_size/2; s > 0; s >>= 1) {{
@@ -280,7 +294,7 @@ def cache_build_reduction_kernel(ctx, operation_str:str, ctype:str, neutral:str,
             // store partial sums in output
             if(lj == 0) O[group_id] = loc_buf[0];
         }}
-    """).build()
+    """).build().reduce
 
 def reduction_kernel(T, axis:int, keepdims:bool, operation_str:str, neutral:str ="0", group_size:int =128):
     # get device
@@ -306,9 +320,10 @@ def reduction_kernel(T, axis:int, keepdims:bool, operation_str:str, neutral:str 
     # gather kernel relevant information
     ctype = dtype_to_ctype(T.dtype)
     use_strides = (len(axis) < len(T.shape)) and (not T.is_contiguous)
+
     # build kernels
-    first_iter_prg = cache_build_reduction_kernel(device.ctx, operation_str, ctype, neutral, use_strides=use_strides)
-    further_iter_prg = cache_build_reduction_kernel(device.ctx, operation_str, ctype, neutral, use_strides=False)
+    first_knl = cache_build_reduction_kernel(device.ctx, operation_str, ctype, neutral, use_strides=use_strides)
+    further_knl = cache_build_reduction_kernel(device.ctx, operation_str, ctype, neutral, use_strides=False)
     # local memory
     loc_buf = cl.LocalMemory(T.dtype.itemsize * group_size)
     # stride arguments for first iteration
@@ -317,16 +332,20 @@ def reduction_kernel(T, axis:int, keepdims:bool, operation_str:str, neutral:str 
         cl.Buffer(device.ctx, cl.mem_flags.READ_ONLY | cl.mem_flags.COPY_HOST_PTR, hostbuf=np.asarray(T.shape, dtype=np.int32)),
         np.int32(len(T.shape))
     ) if use_strides else tuple()
+
+    # set kernel arguments
+    first_knl.set_args(np.int32(n_red_items), T.data, O.data, loc_buf, np.int32(T.offset), *stride_args)
     # first iteration of reduction
     n, m = O.numel() // n_groups, ceil(n_red_items / group_size) * group_size
-    first_iter_prg.reduce(device.queue, [n, m], [1, group_size], np.int32(n_red_items), T.data, O.data, loc_buf, *stride_args)
+    cl.enqueue_nd_range_kernel(device.queue, first_knl, [n, m], [1, group_size])
     # further reduction iterations
     for i in range(1, n_iters):
         k = ceil(n_red_items / (group_size ** i))
         m = ceil(k / group_size) * group_size
-        further_iter_prg.reduce(device.queue, [n, m], [1, group_size], np.int32(k), O.data, O.data, loc_buf)
+        further_knl.set_args(np.int32(k), O.data, O.data, loc_buf, np.int32(0))
+        cl.enqueue_nd_range_kernel(device.queue, further_knl, [n, m], [1, group_size])
     # wait for queue to finish
     device.queue.finish()
     # remove partial sums stored in last dimension of output
     n = int(np.prod(shape[:-1])) * O.dtype.itemsize
-    return device.Tensor(O.data[:n], shape=shape[:-1], dtype=O.dtype)
+    return device.Tensor(O.data, shape=shape[:-1], dtype=O.dtype)

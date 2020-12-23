@@ -22,20 +22,19 @@ class OpenCLTensor(AbstractTensor, metaclass=__OpenCLTensorType):
     # this is set by the device tensor types that inherit from this type (see device.py)
     _device = None
 
-    def __init__(self, data:cl.Buffer, shape:tuple =(-1,), strides:tuple =None, dtype:type =np.float32, requires_grad:bool =True):
+    def __init__(self, data:cl.Buffer, shape:tuple =(-1,), strides:tuple =None, offset:int =0, dtype:type =np.float32, requires_grad:bool =True):
         # initialize tensor
-        assert isinstance(data, cl.Buffer)
+        assert isinstance(data, (cl.Buffer, cl.tools.PooledBuffer))
         AbstractTensor.__init__(self, data=data, requires_grad=requires_grad)
-        # save data type
+        # save info
         self.__dtype = np.dtype(dtype)
-        # prepare shape
-        n, m = abs(np.prod(shape)), data.size // self.__dtype.itemsize
-        shape = tuple(k if k != -1 else m // n for k in shape)
-        assert np.prod(shape) <= m
-        # save shape and strides
+        self.__offset = offset
         self.__shape = tuple(shape)
         self.__strides = tuple(strides) if strides is not None else _get_strides(self.__shape)
+        # assertions
         assert len(self.__shape) == len(self.__strides), "Shape and strides don't align!"
+        assert np.prod(shape) <= (data.size // self.__dtype.itemsize) - offset, "Buffer is too small for shape!"
+        assert self.offset + self.numel() <= self.data.size // self.dtype.itemsize, "Offset bigger than number of elements in buffer!"
 
     @property
     def dtype(self):
@@ -46,6 +45,9 @@ class OpenCLTensor(AbstractTensor, metaclass=__OpenCLTensorType):
     @property
     def strides(self) -> tuple:
         return self.__strides
+    @property
+    def offset(self) -> int:
+        return self.__offset
     @property
     def device(self) -> "OpenCLDevice":
         return self.__class__._device
@@ -65,7 +67,7 @@ class OpenCLTensor(AbstractTensor, metaclass=__OpenCLTensorType):
             device = OpenCLDevice.default_device() if cls._device is None else cls._device
         dtype = np.dtype(dtype)
         # create buffer and tensor - use device tensor type
-        buffer = cl.Buffer(device.ctx, cl.mem_flags.READ_WRITE, size=int(dtype.itemsize * np.prod(shape)))
+        buffer = device.mem_pool.allocate(int(dtype.itemsize * np.prod(shape)))
         return device.Tensor(buffer, shape=shape, dtype=dtype, requires_grad=requires_grad)
 
     @classmethod
@@ -89,7 +91,12 @@ class OpenCLTensor(AbstractTensor, metaclass=__OpenCLTensorType):
         # create buffer and tensor
         shape, dtype = a.shape, a.dtype
         strides = np.asarray(a.strides, dtype=np.uint32) // dtype.itemsize
-        # make array contiguous for buffer
+        # create empty tensor and copy values from given array
+        tensor = device.Tensor.empty(shape, dtype=dtype, requires_grad=requires_grad)
+        tensor.__strides = tuple(strides)
+        cl.enqueue_copy(device.queue, tensor.data, a)
+        return tensor
+
         a.strides = np.asarray(_get_strides(shape)) * dtype.itemsize
         buffer = cl.Buffer(device.ctx, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=a.data)
         a.strides = strides * dtype.itemsize
@@ -109,7 +116,7 @@ class OpenCLTensor(AbstractTensor, metaclass=__OpenCLTensorType):
         data = np.empty(self.shape, dtype=self.dtype)
         data.strides = np.asarray(self.strides) * self.dtype.itemsize
         # copy buffer to numpy array
-        cl.enqueue_copy(self.device.queue, data, self.data)
+        cl.enqueue_copy(self.device.queue, data, self.data, device_offset=self.offset * self.dtype.itemsize)
         self.device.queue.finish()
         # set strides
         return data

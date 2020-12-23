@@ -49,6 +49,7 @@ class contiguous(Function):
 class reshape(Function):
     def forward(ctx, a, *shape):
         ctx.save_for_backward(a.shape)
+        shape = tuple(s if s != -1 else (a.numel() // -np.prod(shape)) for s in shape)
         return OpenCLTensor(a.contiguous().data, shape=shape, dtype=a.dtype)
     def backward(ctx, out_grad):
         shape, = ctx.get_saved_tensors()
@@ -321,11 +322,11 @@ def _idx_view(a, idx):
     shape = tuple(i.stop - i.start for i in idx if isinstance(i, slice))
     strides = tuple(st for i, st in zip(idx, a.strides) if isinstance(i, slice))
     assert len(idx) == len(a.shape) == len(a.strides)
-    # get start byte position
+    # compute offset
     idx_start = np.asarray(tuple(i.start if isinstance(i, slice) else i for i in idx), dtype=np.int32)
-    byte_start = (idx_start * np.asarray(a.strides, np.int32)).sum() * a.dtype.itemsize
+    offset = a.offset + np.sum(idx_start * np.asarray(a.strides, np.int32))
     # create sliced tensor
-    return OpenCLTensor(a.data[byte_start:], shape=shape, strides=strides, dtype=a.dtype)
+    return OpenCLTensor(a.data, shape=shape, strides=strides, offset=offset, dtype=a.dtype)
 
 @OpenCLTensor.register_op("__getitem__")
 class __getitem(Function):

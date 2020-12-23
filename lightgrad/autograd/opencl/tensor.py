@@ -97,12 +97,6 @@ class OpenCLTensor(AbstractTensor, metaclass=__OpenCLTensorType):
         cl.enqueue_copy(device.queue, tensor.data, a)
         return tensor
 
-        a.strides = np.asarray(_get_strides(shape)) * dtype.itemsize
-        buffer = cl.Buffer(device.ctx, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=a.data)
-        a.strides = strides * dtype.itemsize
-        # create tensor
-        return device.Tensor(buffer, shape=shape, strides=strides, dtype=dtype, requires_grad=requires_grad)
-
     def copy(self, requires_grad:bool =True) -> "OpenCLTensor":
         if self.is_contiguous:
             o = self.device.Tensor.empty(self.shape, dtype=self.dtype, requires_grad=requires_grad)

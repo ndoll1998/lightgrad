@@ -155,12 +155,14 @@ def cache_build_dot_kernel(ctx, ctype_A:str, ctype_B:str, ctype_O:str, block_siz
             const uint N,
             const uint K
         ) {{
+            // global batch index
+            const uint b = get_global_id(0);
             // local thread index
-            const uint li = get_local_id(0);
-            const uint lj = get_local_id(1);
+            const uint li = get_local_id(1);
+            const uint lj = get_local_id(2);
             // work-group index
-            const uint bi = get_group_id(0);
-            const uint bj = get_group_id(1);
+            const uint bi = get_group_id(1);
+            const uint bj = get_group_id(2);
 
             // allocate local memory
             __local {ctype_A} Asub[RTS][TS];
@@ -176,8 +178,8 @@ def cache_build_dot_kernel(ctx, ctype_A:str, ctype_B:str, ctype_O:str, block_siz
                     acc[wi][wj] = 0;
 
             // offsets
-            A_off += bi * TS * K;
-            B_off += bj * TS;
+            A_off += bi * TS * K + b * M * K;
+            B_off += bj * TS + b * K * N;
             
             for (int t = 0; t < K; t+=RTS) {{                
                 // load tile into local memory
@@ -203,51 +205,60 @@ def cache_build_dot_kernel(ctx, ctype_A:str, ctype_B:str, ctype_O:str, block_siz
                 // before loading next tiles into local memory
                 barrier(CLK_LOCAL_MEM_FENCE);
             }}
-            // store output in matrix            
-            uint i = bi * TS + li;
-            uint j = bj * TS + lj;
+            // store output in matrix
+            const uint O_off = b * M * N;
+            const uint i = bi * TS + li;
+            const uint j = bj * TS + lj;
             for (int wi = 0; wi < WPT; wi++)
                 for (int wj = 0; wj < WPT; wj++)
-                    O[(i + wj*RTS) * N + (j + wi*RTS)] = acc[wi][wj];
+                    O[(i + wj*RTS) * N + (j + wi*RTS) + O_off] = acc[wi][wj];
         }}
     """).build().matmul
 
 def _match_blocks(T, block_size):
-    M, N = T.shape
+    B, M, N = T.shape
     if (M % block_size != 0) or (N % block_size != 0):
-        shape = (ceil(M / block_size) * block_size, ceil(N / block_size) * block_size)
+        shape = (B, ceil(M / block_size) * block_size, ceil(N / block_size) * block_size)
         T_pad = T.device.Tensor.zeros(shape, dtype=T.dtype)
-        T_pad[:M, :N] = T
+        T_pad[:, :M, :N] = T
         return T_pad
     return T
 
-def dot_kernel(A, B, block_size:int =128, work_per_thread:int =8):
-    assert len(A.shape) == len(B.shape) == 2
-    assert A.shape[1] == B.shape[0]
+def dot_kernel(X, Y, block_size:int =128, work_per_thread:int =8):
+    assert 3 >= len(X.shape) == len(Y.shape) >= 2
+    assert X.shape[:-2] == Y.shape[:-2]
+    assert X.shape[-1] == Y.shape[-2]
     # get tensor information
-    device = A.device
-    M, N = np.int32(A.shape[0]), np.int32(B.shape[1])
+    device = X.device
+    n, M, N, K = len(X.shape), X.shape[-2], Y.shape[-1], X.shape[-1]
+    # flatten batch dimensions
+    X = X.reshape(-1, M, K)
+    Y = Y.reshape(-1, K, N)
+    assert X.shape[0] == Y.shape[0], "Batches do not align! (%i != %i)" % (X.shape[0], Y.shape[0])
     # pad inputs to be multiple of block size in both directions
-    A = _match_blocks(A, block_size)
-    B = _match_blocks(B, block_size)
+    X = _match_blocks(X, block_size)
+    Y = _match_blocks(Y, block_size)
     # create output tensor
-    pad_M, pad_N, pad_K = np.int32(A.shape[0]), np.int32(B.shape[1]), np.int32(A.shape[1])
-    O = device.Tensor.empty(shape=(pad_M, pad_N), dtype=A.dtype) # TODO: broadcast dtype
+    B, pad_M, pad_N, pad_K = X.shape[0], X.shape[1], Y.shape[2], X.shape[2]
+    B, pad_M, pad_N, pad_K = np.int32(B), np.int32(pad_M), np.int32(pad_N), np.int32(pad_K)
+    O = device.Tensor.empty(shape=(B, pad_M, pad_N), dtype=X.dtype) # TODO: broadcast dtype
     # get data types
-    ctype_A = dtype_to_ctype(A.dtype)
-    ctype_B = dtype_to_ctype(B.dtype)
+    ctype_A = dtype_to_ctype(X.dtype)
+    ctype_B = dtype_to_ctype(Y.dtype)
     ctype_O = dtype_to_ctype(O.dtype)
+    # kernel global and local thread layout
+    global_shape = [B, pad_M // work_per_thread, pad_N // work_per_thread]
+    local_shape = [1] + [block_size // work_per_thread] * 2
     # build and call kernel
-    global_shape, local_shape = [pad_M // work_per_thread, pad_N // work_per_thread], [block_size // work_per_thread] * 2
     knl = cache_build_dot_kernel(device.ctx, ctype_A, ctype_B, ctype_O, block_size, work_per_thread)
     knl(device.queue, global_shape, local_shape, 
-            A.contiguous().data, B.contiguous().data, O.data, 
-            np.int32(A.offset), np.int32(B.offset),
+            X.contiguous().data, Y.contiguous().data, O.data, 
+            np.int32(X.offset), np.int32(Y.offset),
             pad_M, pad_N, pad_K)
     device.queue.finish()
     # remove padding from output
-    return (O if (M, N) == (pad_M, pad_N) else O[:M, :N])
-
+    idx = (slice(0, B) if (n == 3) else 0, slice(0, M), slice(0, N))
+    return O[idx]
 
 @functools.lru_cache()
 def cache_build_reduction_kernel(ctx, operation_str:str, ctype:str, neutral:str, use_strides:bool):

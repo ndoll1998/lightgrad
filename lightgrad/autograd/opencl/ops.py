@@ -140,13 +140,19 @@ class pow(Function):
 @OpenCLTensor.register_op("__matmul__")
 class dot(Function):
     def forward(ctx, a, b):
-        ctx.save_for_backward(a, b)
-        return dot_kernel(a, b)    
+        a_shape, b_shape = a.shape, b.shape
+        out_shape = (*a_shape[:-2], a_shape[-2], b_shape[-1])
+        # flatten batch dimensions
+        a = a.reshape(-1, *a_shape[-2:])
+        b = b.reshape(-1, *b_shape[-2:])
+        ctx.save_for_backward(a, b, a_shape, b_shape)
+        return dot_kernel(a, b).reshape(*out_shape)
     def backward(ctx, out_grad):
-        a, b = ctx.get_saved_tensors()
-        a_grad = dot_kernel(out_grad, b.transpose(1, 0))
-        b_grad = dot_kernel(a.transpose(1, 0), out_grad)
-        return a_grad, b_grad   
+        a, b, a_shape, b_shape = ctx.get_saved_tensors()
+        out_grad = out_grad.reshape(-1, *out_grad.shape[-2:])
+        a_grad = dot_kernel(out_grad, b.transpose(0, 2, 1))
+        b_grad = dot_kernel(a.transpose(0, 2, 1), out_grad)
+        return a_grad.reshape(*a_shape), b_grad.reshape(*b_shape)
 
 # reverse operators for non-symmetrical operators
 OpenCLTensor.register_op("__rsub__", _bi_reverse(sub))

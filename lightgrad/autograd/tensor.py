@@ -1,5 +1,6 @@
 import numpy as np
 from .grads import Gradients
+from functools import reduce, lru_cache
 from collections import OrderedDict
 
 class _TensorType(type):
@@ -28,7 +29,12 @@ class AbstractTensor(metaclass=_TensorType):
         assert isinstance(ctx, Function)
         self.__ctx = ctx
         return self
+    def _set_data(self, data) -> "AbstractTensor":
+        self.__data = data
+        return self
+
     def detach(self) -> "AbstractTensor":
+        # TODO: create a copy of the tensor
         self.__ctx = None
         return self
 
@@ -52,7 +58,7 @@ class AbstractTensor(metaclass=_TensorType):
     def item(self):
         return self.numpy().item()
     def numel(self) -> int:
-        return int(np.prod(self.shape))
+        return int(reduce(lambda a, b: a * b, self.shape)) if len(self.shape) > 0 else 1
 
     @staticmethod
     def empty(shape, requires_grad:bool =True) -> "AbstractTensor":

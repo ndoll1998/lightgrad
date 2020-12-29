@@ -8,17 +8,26 @@ import numpy as np
 np.random.seed(1337)
 
 # get any device to use
-device = Device.any()
-if device.is_available():
+try:
+    device = Device()
+    opencl_available = True
+except:
+    opencl_available = False
+    print("Not Testing OpenCL Tensor because no opencl devices were found!")
+
+if opencl_available:
     class Test_OpenCLTensor(unittest.TestCase):
 
         def compare_unary_func(self, cpu_f, opencl_f, shape=(64, 64), l=-1, h=1, eps=1e-3, transpose=False):
             # create random numpy array
             a = np.random.uniform(l, h, size=shape).astype(np.float32)
-            a = a if not transpose else a.T
             # create cpu and opencl tensor and compare
             cpu_tensor = CpuTensor.from_numpy(a)
             opencl_tensor = device.Tensor.from_numpy(a)
+            if transpose:
+                a = a.transpose(1, 0)
+                cpu_tensor = cpu_tensor.transpose(1, 0)
+                opencl_tensor = opencl_tensor.transpose(1, 0)
             # apply functions
             cpu_out = cpu_f(cpu_tensor).numpy()
             opencl_out = opencl_f(opencl_tensor).numpy()
@@ -27,12 +36,15 @@ if device.is_available():
 
         def compare_binary_func(self, cpu_f, opencl_f, a_shape=(64, 64), b_shape=(64, 64), l=-1, h=1, eps=1e-3, transpose=False):
             # create random numpy arrays
-            a = np.random.uniform(l, h, size=a_shape) if not transpose else np.random.uniform(l, h, size=a_shape).T
-            b = np.random.uniform(l, h, size=b_shape) if not transpose else np.random.uniform(l, h, size=b_shape).T
-            a, b = a.astype(np.float32), b.astype(np.float32)
+            a = np.random.uniform(l, h, size=a_shape).astype(np.float32)
+            b = np.random.uniform(l, h, size=b_shape).astype(np.float32)
             # create cpu and opencl tensor and compare
             cpu_a, cpu_b = CpuTensor.from_numpy(a), CpuTensor.from_numpy(b)
             opencl_a, opencl_b = device.Tensor.from_numpy(a), device.Tensor.from_numpy(b)
+            if transpose:
+                a, b = a.transpose(1, 0), b.transpose(1, 0)
+                cpu_a, cpu_b = cpu_a.transpose(1, 0), cpu_b.transpose(1, 0)
+                opencl_a, opencl_b = opencl_a.transpose(1, 0), opencl_b.transpose(1, 0)
             # apply functions
             cpu_out = cpu_f(cpu_a, cpu_b).numpy()
             opencl_out = opencl_f(opencl_a, opencl_b).numpy()
@@ -42,13 +54,13 @@ if device.is_available():
         """ basic """
 
         def test_atom_kernel(self):
-            from lightgrad.autograd.opencl.ops import atom_kernel
-            identity_kernel = lambda t: atom_kernel(t=t, out='o', operation_str='o=t')
+            from lightgrad.autograd.opencl.kernels import atom
+            identity_kernel = lambda t: atom(t=t, output='o', op='o=t')[0]
             self.compare_unary_func(cpu_f=lambda t: t, opencl_f=identity_kernel)
 
         def test_atom_kernel_broadcast(self):
-            from lightgrad.autograd.opencl.ops import atom_kernel
-            add_kernel = lambda a,b: atom_kernel(a=a, b=b, out='o', operation_str='o=a+b')
+            from lightgrad.autograd.opencl.kernels import atom
+            add_kernel = lambda a,b: atom(a=a, b=b, output='o', op='o=a+b')[0]
             self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(64, 64), b_shape=(1, 64))
             self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(64, 64), b_shape=(64, 1))
             self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(1, 64), b_shape=(64, 64))
@@ -57,8 +69,8 @@ if device.is_available():
             self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(1, 64), b_shape=(64, 1))
 
         def test_atom_kernel_strides(self):
-            from lightgrad.autograd.opencl.ops import atom_kernel
-            identity_kernel = lambda t: atom_kernel(t=t, out='o', operation_str='o=t')
+            from lightgrad.autograd.opencl.kernels import atom
+            identity_kernel = lambda t: atom(t=t, output='o', op='o=t')[0]
             self.compare_unary_func(cpu_f=lambda t: t, opencl_f=identity_kernel, transpose=True)
 
         """ transformations """
@@ -89,24 +101,6 @@ if device.is_available():
             self.compare_unary_func(CpuTensor.tanh, OpenCLTensor.tanh)
         def test_relu(self):
             self.compare_unary_func(CpuTensor.relu, OpenCLTensor.relu)
-    
-        """ Reductions/Selections """
-        def test_sum(self):
-            self.compare_unary_func(CpuTensor.sum, OpenCLTensor.sum, shape=(64, 64))
-            self.compare_unary_func(lambda t: CpuTensor.sum(t, axis=0), lambda t: OpenCLTensor.sum(t, axis=0), shape=(64, 64))
-            self.compare_unary_func(lambda t: CpuTensor.sum(t, axis=1), lambda t: OpenCLTensor.sum(t, axis=1), shape=(64, 64))
-        def test_mean(self):
-            self.compare_unary_func(CpuTensor.mean, OpenCLTensor.mean, shape=(64, 64))
-            self.compare_unary_func(lambda t: CpuTensor.mean(t, axis=0), lambda t: OpenCLTensor.mean(t, axis=0), shape=(64, 64))
-            self.compare_unary_func(lambda t: CpuTensor.mean(t, axis=1), lambda t: OpenCLTensor.mean(t, axis=1), shape=(64, 64))
-        def test_min(self):
-            self.compare_unary_func(CpuTensor.min, OpenCLTensor.min, shape=(64, 64))
-            self.compare_unary_func(lambda t: CpuTensor.min(t, axis=0), lambda t: OpenCLTensor.min(t, axis=0), shape=(64, 64))
-            self.compare_unary_func(lambda t: CpuTensor.min(t, axis=1), lambda t: OpenCLTensor.min(t, axis=1), shape=(64, 64))
-        def test_max(self):
-            self.compare_unary_func(CpuTensor.max, OpenCLTensor.max, shape=(64, 64))
-            self.compare_unary_func(lambda t: CpuTensor.max(t, axis=0), lambda t: OpenCLTensor.max(t, axis=0), shape=(64, 64))
-            self.compare_unary_func(lambda t: CpuTensor.max(t, axis=1), lambda t: OpenCLTensor.max(t, axis=1), shape=(64, 64))
             
         """ binary operators """
         def test_add(self):
@@ -125,11 +119,25 @@ if device.is_available():
         def test_pow(self):
             self.compare_binary_func(CpuTensor.pow, OpenCLTensor.pow, l=0, h=1)
             
-        """ more complex operations """
+        """ Reductions/Selections """
+        def test_sum(self):
+            self.compare_unary_func(CpuTensor.sum, OpenCLTensor.sum, shape=(64, 64))
+            self.compare_unary_func(lambda t: CpuTensor.sum(t, axis=0), lambda t: OpenCLTensor.sum(t, axis=0), shape=(64, 64))
+            self.compare_unary_func(lambda t: CpuTensor.sum(t, axis=1), lambda t: OpenCLTensor.sum(t, axis=1), shape=(64, 64))
+        def test_mean(self):
+            self.compare_unary_func(CpuTensor.mean, OpenCLTensor.mean, shape=(64, 64))
+            self.compare_unary_func(lambda t: CpuTensor.mean(t, axis=0), lambda t: OpenCLTensor.mean(t, axis=0), shape=(64, 64))
+            self.compare_unary_func(lambda t: CpuTensor.mean(t, axis=1), lambda t: OpenCLTensor.mean(t, axis=1), shape=(64, 64))
+        def test_min(self):
+            self.compare_unary_func(CpuTensor.min, OpenCLTensor.min, shape=(64, 64))
+            self.compare_unary_func(lambda t: CpuTensor.min(t, axis=0), lambda t: OpenCLTensor.min(t, axis=0), shape=(64, 64))
+            self.compare_unary_func(lambda t: CpuTensor.min(t, axis=1), lambda t: OpenCLTensor.min(t, axis=1), shape=(64, 64))
+        def test_max(self):
+            self.compare_unary_func(CpuTensor.max, OpenCLTensor.max, shape=(64, 64))
+            self.compare_unary_func(lambda t: CpuTensor.max(t, axis=0), lambda t: OpenCLTensor.max(t, axis=0), shape=(64, 64))
+            self.compare_unary_func(lambda t: CpuTensor.max(t, axis=1), lambda t: OpenCLTensor.max(t, axis=1), shape=(64, 64))
 
-else:
-    # device not available
-    print("Not Testing OpenCL Tensor because no opencl devices were found!")
+        """ more complex operations """
 
 
 if __name__ == '__main__':

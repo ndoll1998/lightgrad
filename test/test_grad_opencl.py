@@ -8,8 +8,14 @@ import numpy as np
 np.random.seed(1337)
 
 # get any device to use
-device = Device.any()
-if device.is_available():
+try:
+    device = Device()
+    opencl_available = True
+except:
+    opencl_available = False
+    print("Not Testing OpenCL Tensor because no opencl devices were found!")
+
+if opencl_available:
     class OpenCLGradCheck(unittest.TestCase):
 
         def unary_func(self, f, shape=(3,), l=-1, h=1, eps=1e-3, transpose=False):
@@ -118,11 +124,6 @@ if device.is_available():
             for n in cpu_grads.keys():
                 cpu_g, opencl_g = cpu_grads[n], opencl_grads[n]
                 np.testing.assert_allclose(cpu_g, opencl_g, atol=5e-4, rtol=5e-4)
-
-else:
-    # device not available
-    print("Not Testing OpenCL Tensor because no opencl devices were found!")
-
 
 if __name__ == '__main__':
     unittest.main(verbose=2)

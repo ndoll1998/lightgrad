@@ -2,7 +2,7 @@ import numpy as np
 import pyopencl as cl
 from ..func import Function
 from .tensor import OpenCLTensor
-from .kernels import atom_kernel, dot_kernel, reduction_kernel
+from . import kernels
 
 """ Helpers """
 
@@ -20,30 +20,21 @@ def _bi_reverse(f):
 @OpenCLTensor.register_op()
 @OpenCLTensor.register_op("T")
 class transpose(Function):
-    def forward(ctx, a, *axes):
-        assert len(axes) == len(a.shape)
-        ctx.save_for_backward(axes)
-        shape = tuple(a.shape[i] for i in axes)
-        strides = tuple(a.strides[i] for i in axes)
-        return OpenCLTensor(a.data, shape=shape, strides=strides, dtype=a.dtype)
+    def forward(ctx, a, *perm):
+        assert len(a.shape) == len(perm)
+        ctx.save_for_backward(perm)
+        return OpenCLTensor(a.data,
+            shape=tuple(a.shape[i] for i in perm),
+            strides=tuple(a.strides[i] for i in perm),
+            offset=a.offset,
+            dtype=a.dtype
+        )
     def backward(ctx, out_grad):
-        axes, = ctx.get_saved_tensors()
-        rev_axes = [None] * len(axes)
-        for i, j in enumerate(axes):
-            rev_axes[j] = i
-        return out_grad.transpose(*rev_axes)
-
-@OpenCLTensor.register_op()
-class contiguous(Function):
-    def forward(ctx, a):
-        if not a.is_contiguous:
-            return atom_kernel(
-                a=a, out='o',
-                operation_str='o = a'
-            )
-        return a
-    def backward(ctx, out_grad):
-        return out_grad
+        perm, = ctx.get_saved_tensors()
+        rev_perm = [None] * len(perm)
+        for i, j in enumerate(perm):
+            rev_perm[j] = i
+        return out_grad.transpose(*rev_perm)
 
 @OpenCLTensor.register_op()
 class reshape(Function):
@@ -58,83 +49,88 @@ class reshape(Function):
 """ Basic Math Operators """
 
 @OpenCLTensor.register_op()
-@OpenCLTensor.register_op("__neg__")
+@OpenCLTensor.register_op('__neg__')
 class neg(Function):
     def forward(ctx, a):
-        return atom_kernel(
-            a=a, out="o",
-            operation_str="o = -a"
-        )
+        return kernels.atom(
+            a=a, output='o',
+            op='o = -a'
+        )[0]
     def backward(ctx, out_grad):
         return -out_grad
 
 @OpenCLTensor.register_op()
-@OpenCLTensor.register_op("__add__")
-@OpenCLTensor.register_op("__radd__")
+@OpenCLTensor.register_op('__add__')
+@OpenCLTensor.register_op('__radd__')
 class add(Function):
     def forward(ctx, a, b):
-        return atom_kernel(
-            a=a, b=b, out="o",
-            operation_str="o = a + b"
-        )
+        return kernels.atom(
+            a=a, b=b, output='o',
+            op='o = a + b'
+        )[0]
     def backward(ctx, out_grad):
         return out_grad, out_grad
 
 @OpenCLTensor.register_op()
-@OpenCLTensor.register_op("__sub__")
+@OpenCLTensor.register_op('__sub__')
 class sub(Function):
     def forward(ctx, a, b):
-        return atom_kernel(
-            a=a, b=b, out="o",
-            operation_str="o = a - b"
-        )
+        return kernels.atom(
+            a=a, b=b, output='o',
+            op='o = a - b'
+        )[0]
     def backward(ctx, out_grad):
         return out_grad, -out_grad
 
 @OpenCLTensor.register_op()
-@OpenCLTensor.register_op("__mul__")
-@OpenCLTensor.register_op("__rmul__")
+@OpenCLTensor.register_op('__mul__')
+@OpenCLTensor.register_op('__rmul__')
 class mul(Function):
     def forward(ctx, a, b):
         ctx.save_for_backward(a, b)
-        return atom_kernel(
-            a=a, b=b, out="o",
-            operation_str="o = a * b"
-        )
+        return kernels.atom(
+            a=a, b=b, output='o',
+            op='o = a * b'
+        )[0]
     def backward(ctx, out_grad):
         a, b = ctx.get_saved_tensors()
-        return out_grad * b, a * out_grad
+        return kernels.atom(
+            a=a, b=b, g=out_grad, output=('a_grad', 'b_grad'),
+            op='a_grad = b * g; b_grad = a * g;'
+        )
 
 @OpenCLTensor.register_op()
 @OpenCLTensor.register_op("__truediv__")
 class div(Function):
     def forward(ctx, a, b):
         ctx.save_for_backward(a, b)
-        return atom_kernel(
-            a=a, b=b, out="o",
-            operation_str="o = a / b"
-        )
+        return kernels.atom(
+            a=a, b=b, output='o',
+            op="o = a / b"
+        )[0]
     def backward(ctx, out_grad):
         a, b = ctx.get_saved_tensors()
-        a_grad = atom_kernel(g=out_grad, b=b, out='o', operation_str='o = g / b')
-        b_grad = atom_kernel(g=out_grad, a=a, b=b, out='o', operation_str='o = -a / pow(b, 2) * g')
-        return a_grad, b_grad
+        return kernels.atom(
+            a=a, b=b, g=out_grad, output=('a_grad', 'b_grad'),
+            op="a_grad = g / b; b_grad = -a / pown(b, 2) * g"
+        )
 
 @OpenCLTensor.register_op()
 @OpenCLTensor.register_op("__pow__")
 class pow(Function):
     def forward(ctx, a, b):
-        y = atom_kernel(
-            a=a, b=b, out="o",
-            operation_str="o = pow(a, b)"
+        y, = kernels.atom(
+            a=a, b=b, output='o',
+            op="o = pow((float)a, (float)b)"
         )
         ctx.save_for_backward(a, b, y)
         return y
     def backward(ctx, out_grad):
         a, b, y = ctx.get_saved_tensors()
-        a_grad = atom_kernel(g=out_grad, a=a, b=b, out='o', operation_str='o = b * pow(a, b-1) * g')
-        b_grad = atom_kernel(g=out_grad, a=a, y=y, out='o', operation_str='o = g * y * log(a)')
-        return a_grad, b_grad
+        return kernels.atom(
+            a=a, b=b, y=y, g=out_grad, output=('a_grad', 'b_grad'),
+            op="a_grad = b * pow(a, b-1) * g; b_grad = g * y * log(a)"
+        )
 
 @OpenCLTensor.register_op()
 @OpenCLTensor.register_op("__matmul__")
@@ -146,12 +142,12 @@ class dot(Function):
         a = a.reshape(-1, *a_shape[-2:])
         b = b.reshape(-1, *b_shape[-2:])
         ctx.save_for_backward(a, b, a_shape, b_shape)
-        return dot_kernel(a, b).reshape(*out_shape)
+        return kernels.dot(a, b).reshape(*out_shape)
     def backward(ctx, out_grad):
         a, b, a_shape, b_shape = ctx.get_saved_tensors()
         out_grad = out_grad.reshape(-1, *out_grad.shape[-2:])
-        a_grad = dot_kernel(out_grad, b.transpose(0, 2, 1))
-        b_grad = dot_kernel(a.transpose(0, 2, 1), out_grad)
+        a_grad = kernels.dot(out_grad, b.transpose(0, 2, 1))
+        b_grad = kernels.dot(a.transpose(0, 2, 1), out_grad)
         return a_grad.reshape(*a_shape), b_grad.reshape(*b_shape)
 
 # reverse operators for non-symmetrical operators
@@ -160,46 +156,52 @@ OpenCLTensor.register_op("__rtruediv__", _bi_reverse(div))
 OpenCLTensor.register_op("__rpow__", _bi_reverse(pow))
 OpenCLTensor.register_op("__rmatmul__", _bi_reverse(dot))
 
+
 """ Inplace Operators """
 
 @OpenCLTensor.register_op('__iadd__')
 class __iadd(Function):
     def forward(ctx, t, other):
-        return atom_kernel(
-            a=t, b=other, out='a',
-            operation_str="a += b"
-        )
+        return kernels.atom(
+            a=t, b=other, output='a',
+            op="a += b",
+            additional_read=('a',)
+        )[0]
 
 @OpenCLTensor.register_op('__isub__')
 class __isub(Function):
     def forward(ctx, t, other):
-        return atom_kernel(
-            a=t, b=other, out='a',
-            operation_str="a -= b"
-        )
+        return kernels.atom(
+            a=t, b=other, output='a',
+            op="a -= b",
+            additional_read=('a',)
+        )[0]
 
 @OpenCLTensor.register_op('__imul__')
 class __imul(Function):
     def forward(ctx, t, other):
-        return atom_kernel(
-            a=t, b=other, out='a',
-            operation_str="a *= b"
-        )
+        return kernels.atom(
+            a=t, b=other, output='a',
+            op="a *= b",
+            additional_read=('a',)
+        )[0]
         
 @OpenCLTensor.register_op('__itruediv__')
 class __idiv(Function):
     def forward(ctx, t, other):
-        return atom_kernel(
-            a=t, b=other, out='a',
-            operation_str="a /= b"
-        )
+        return kernels.atom(
+            a=t, b=other, output='a',
+            op="a /= b",
+            additional_read=('a',)
+        )[0]
 
 @OpenCLTensor.register_op()
 class fill(Function):
     def forward(ctx, t, val):
         val = np.asarray(val, dtype=t.dtype)
-        cl.enqueue_fill_buffer(t.device.queue, t.data, val, 0, t.data.size)
+        cl.enqueue_fill_buffer(t.device.queue, t.data, val, t.offset * t.dtype.itemsize, t.data.size)
         return t
+
 
 """ Non-Linearities """
 
@@ -207,109 +209,109 @@ class fill(Function):
 class sin(Function):
     def forward(ctx, t):
         ctx.save_for_backward(t)
-        return atom_kernel(
-            t=t, out='o',
-            operation_str='o = sin(t)'
-        )
+        return kernels.atom(
+            t=t, output='o',
+            op='o = sin(t)'
+        )[0]
     def backward(ctx, out_grad):
         t, = ctx.get_saved_tensors()
-        return atom_kernel(
-            t=t, g=out_grad, out='o',
-            operation_str='o = cos(t) * g'
-        )
+        return kernels.atom(
+            t=t, g=out_grad, output='o',
+            op='o = cos(t) * g'
+        )[0]
 
 @OpenCLTensor.register_op()
 class cos(Function):
     def forward(ctx, t):
         ctx.save_for_backward(t)
-        return atom_kernel(
-            t=t, out='o',
-            operation_str='o = cos(t)'
-        )
+        return kernels.atom(
+            t=t, output='o',
+            op='o = cos(t)'
+        )[0]
     def backward(ctx, out_grad):
         t, = ctx.get_saved_tensors()
-        return atom_kernel(
-            t=t, g=out_grad, out='o',
-            operation_str='o = -sin(t) * g'
-        )
+        return kernels.atom(
+            t=t, g=out_grad, output='o',
+            op='o = -sin(t) * g'
+        )[0]
 
 @OpenCLTensor.register_op()
 class exp(Function):
     def forward(ctx, t):
-        y = atom_kernel(
-            t=t, out='o',
-            operation_str='o = exp(t)'
-        )
+        y = kernels.atom(
+            t=t, output='o',
+            op='o = exp(t)'
+        )[0]
         ctx.save_for_backward(y)
         return y
     def backward(ctx, out_grad):
         y, = ctx.get_saved_tensors()
-        return atom_kernel(
-            y=y, g=out_grad, out='o',
-            operation_str='o = y * g'
-        )
+        return kernels.atom(
+            y=y, g=out_grad, output='o',
+            op='o = y * g'
+        )[0]
 
 @OpenCLTensor.register_op()
 class log(Function):
     def forward(ctx, t):
         ctx.save_for_backward(t)
-        return atom_kernel(
-            t=t, out='o',
-            operation_str='o = log(t)'
-        )
+        return kernels.atom(
+            t=t, output='o',
+            op='o = log(t)'
+        )[0]
     def backward(ctx, out_grad):
         t, = ctx.get_saved_tensors()
-        return atom_kernel(
-            t=t, g=out_grad, out='o',
-            operation_str='o = (1 / t) * g'
-        )
+        return kernels.atom(
+            t=t, g=out_grad, output='o',
+            op='o = (1 / t) * g'
+        )[0]
 
 @OpenCLTensor.register_op()
 class sigmoid(Function):
     def forward(ctx, t):
-        y = atom_kernel(
-            t=t, out='o',
-            operation_str='o = 1 / (1 + exp(-t))'
+        y, = kernels.atom(
+            t=t, output='o',
+            op='o = 1 / (1 + exp(-t))'
         )
         ctx.save_for_backward(y)
         return y
     def backward(ctx, out_grad):
         y, = ctx.get_saved_tensors()
-        return atom_kernel(
-            y=y, g=out_grad, out='o',
-            operation_str='o = y * (1-y) * g'
-        )
+        return kernels.atom(
+            y=y, g=out_grad, output='o',
+            op='o = y * (1-y) * g'
+        )[0]
 
 @OpenCLTensor.register_op()
 class tanh(Function):
     def forward(ctx, t):
-        y = atom_kernel(
-            t=t, out='o',
-            operation_str='o = tanh(t)'
+        y, = kernels.atom(
+            t=t, output='o',
+            op='o = tanh(t)'
         )
         ctx.save_for_backward(y)
         return y
     def backward(ctx, out_grad):
         y, = ctx.get_saved_tensors()
-        return atom_kernel(
-            y=y, g=out_grad, out='o',
-            operation_str='o = (1 - y*y) * g'
-        )
+        return kernels.atom(
+            y=y, g=out_grad, output='o',
+            op='o = (1 - y*y) * g'
+        )[0]
 
 @OpenCLTensor.register_op()
 class relu(Function):
     def forward(ctx, t):
         ctx.save_for_backward(t)
-        return atom_kernel(
-            t=t, out='o',
-            operation_str='o = (t>=0)? t : 0'
-        )
+        return kernels.atom(
+            t=t, output='o',
+            op='o = (t>=0)? t : 0'
+        )[0]
     def backward(ctx, out_grad):
         t, = ctx.get_saved_tensors()
-        return atom_kernel(
-            t=t, g=out_grad, out='o',
-            operation_str='o = (t>=0)? g : 0'
-        )
+        return kernels.atom(
+            t=t, g=out_grad, output='o',
+            op='o = (t>=0)? g : 0'
+        )[0]
 
 @OpenCLTensor.register_op()
 class softmax(Function):
@@ -353,20 +355,20 @@ class __getitem(Function):
 class __setitem(Function):
     """ TODO: currently only supports single index or slice (no masking) """
     def forward(ctx, a, idx, val):
-        atom_kernel(
+        kernels.atom(
             d=_idx_view(a, idx), 
-            s=val, out='d',
-            operation_str='d=s',
-            depends_on_out=False
+            s=val, output='d',
+            op='d = s',
         )
         return a
+
 
 """ Reductions """
 
 @OpenCLTensor.register_op("sum")
 class _sum(Function):
     def forward(ctx, t, axis:int =None, keepdims:bool =False):
-        return reduction_kernel(t, axis=axis, keepdims=keepdims, operation_str='a + b')
+        return kernels.reduction('a + b', t, axis=axis, keepdims=keepdims, neutral='0')
 
 @OpenCLTensor.register_op("mean")
 class mean(Function):
@@ -381,10 +383,10 @@ class mean(Function):
 @OpenCLTensor.register_op()
 class max(Function):
     def forward(ctx, t, axis:int =None, keepdims:bool =False):
-        return reduction_kernel(t, axis=axis, keepdims=keepdims, operation_str='max(a, b)', neutral="-INFINITY")
+        return kernels.reduction('max(a, b)', t, axis=axis, keepdims=keepdims, neutral="-INFINITY")
         
 @OpenCLTensor.register_op()
 class min(Function):
     def forward(ctx, t, axis:int =None, keepdims:bool =False):
-        return reduction_kernel(t, axis=axis, keepdims=keepdims, operation_str='min(a, b)', neutral="INFINITY")
+        return kernels.reduction('min(a, b)', t, axis=axis, keepdims=keepdims, neutral="INFINITY")
         

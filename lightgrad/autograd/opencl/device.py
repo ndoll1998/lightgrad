@@ -1,6 +1,4 @@
 import pyopencl as cl
-from typing import Union
-from .tensor import OpenCLTensor
 
 _DEVICE_MAP = {
     cl.device_type.ACCELERATOR: 'ACCELERATOR', 
@@ -11,97 +9,107 @@ _DEVICE_MAP = {
     cl.device_type.GPU:         'GPU'
 }
 
-class OpenCLDevice(object):
-    # default device
+class OpenCLDevicePool(object):
+
+    def __init__(self, device_cls):
+        # gather all devices
+        try:
+            # raises error if no opencl platform was found
+            cl_plts = cl.get_platforms()
+            cl_devices = sum([p.get_devices(cl.device_type.ALL) for p in cl_plts], [])
+        except:
+            print("No OpenCL Platforms available!")
+        # all populated devices
+        self.__cl_devices = cl_devices
+        self.__devices = {cl_device: None for cl_device in cl_devices}
+        self.__device_cls = device_cls
+
+    def get_cl_device_id(self, cl_device:cl.Device, local=False):
+        device_type = cl_device.get_info(cl.device_info.TYPE) if local else cl.device_type.ALL
+        cl_devices = self.get_all_cl_device(device_type)
+        return cl_devices.index(cl_device)
+    def get_all_cl_device(self, device_type:cl.device_type =cl.device_type.ALL) -> list:
+        return tuple(p for p in self.__cl_devices
+            if device_type in (p.get_info(cl.device_info.TYPE), cl.device_type.ALL))
+    def get_cl_device(self, device_type:cl.device_type, device_id:int):
+        # get cl device
+        cl_devices = self.get_all_cl_device(device_type=device_type)
+        return cl_devices[device_id] if device_id < len(cl_devices) else None
+    def get_device_from_cl_device(self, cl_device:cl.Device):
+        # find device
+        device = self.__devices[cl_device]
+        # create new device if not populated yet
+        if device is None:
+            # prevent recursive call of constructor
+            device = object.__new__(self.__device_cls)
+            device.__init__(cl_device)
+            self.__devices[cl_device] = device
+        return device
+
+class __OpenCLDeviceType(type):
+
+    def __new__(cls, name, bases, attrs):
+        T = type.__new__(cls, name, bases, attrs)
+        # initialize device pool
+        T.device_pool = OpenCLDevicePool(T)
+        return T
+
+    def __call__(cls, device_type:cl.device_type =cl.device_type.ALL, device_id:int =0):
+        # get cl-device
+        cl_device = cls.device_pool.get_cl_device(device_type, device_id)
+        # handle unvailable devices
+        if cl_device is None:
+            raise RuntimeError("OpenCLDevice not found!")
+        # find device in pool
+        return cls.device_pool.get_device_from_cl_device(cl_device)
+
+class OpenCLDevice(metaclass=__OpenCLDeviceType):
+    # default devices and device pool
     __default_device = None
-    # all populated contexts and queues
-    __contexts = {}
-    __queues = {}     # queues are unique for each context
-    # all populated device tensor types
-    __tensor_types = {}
-    # all populated memory pools
-    __memory_pools = {}
+    device_pool = None
 
-    def __init__(self, context_or_deviceId:Union[int, cl.Context], device_type:int =cl.device_type.ALL):
-        # create or find context
-        if isinstance(context_or_deviceId, int):
-            # get device list and check if device is available
-            try:
-                # raises error when no platform is found
-                device_list = sum((p.get_devices(device_type) for p in cl.get_platforms()), [])
-            except:
-                device_list = []
-            if len(device_list) <= context_or_deviceId:
-                self.__tensor_type = None
-                self.__ctx = None
-                self.__queue = None
-                return
-            device = device_list[context_or_deviceId]
-            # find or create context
-            if device in OpenCLDevice.__contexts:
-                ctx = OpenCLDevice.__contexts[device]
-                queue = OpenCLDevice.__queues[device]
-                tensor_type = OpenCLDevice.__tensor_types[device]
-                mem_pool = OpenCLDevice.__memory_pools[device]
-            else:
-                # not yet populated context
-                ctx = cl.Context([device])
-                queue = cl.CommandQueue(ctx)
-                # create memory pool
-                allocator = cl.tools.ImmediateAllocator(queue)
-                mem_pool = cl.tools.MemoryPool(allocator)
-                # create device tensor type
-                name = "%s(%s:%i)" % (OpenCLTensor.__name__, _DEVICE_MAP[device.type], len(OpenCLDevice.__contexts))
-                tensor_type = type(name, (OpenCLTensor,), {'_device': self})
-                # store
-                OpenCLDevice.__contexts[device] = ctx
-                OpenCLDevice.__queues[device] = cl.CommandQueue(ctx)
-                OpenCLDevice.__tensor_types[device] = tensor_type
-                OpenCLDevice.__memory_pools[device] = mem_pool
-        else:
-            # We assume that the provided context was populated
-            # and thus also queue and tensor-type
-            ctx = context_or_deviceId
-            device = ctx.devices[0]
-            queue = OpenCLDevice.__queues[device]
-            tensor_type = OpenCLDevice.__tensor_types[device]
-            mem_pool = OpenCLDevice.__memory_pools[device]
-        # save context and queue
-        self.__tensor_type = tensor_type
-        self.__ctx = ctx
-        self.__queue = queue
-        self.__mem_pool = mem_pool
+    def __init__(self, cl_device:cl.Device):
+        self.__cl_device = cl_device
+        self.__desc = "%s:%i" % (
+            _DEVICE_MAP[cl_device.get_info(cl.device_info.TYPE)], 
+            OpenCLDevice.device_pool.get_cl_device_id(cl_device, local=True)
+        )
+        # create context and queue
+        self.__context = cl.Context(devices=[cl_device])
+        self.__queue = cl.CommandQueue(self.__context, device=cl_device)
+        # create memory pool
+        alloc = cl.tools.ImmediateAllocator(self.__queue)
+        self.__mem_pool = cl.tools.MemoryPool(alloc)
+        # create tensor type for device
+        name = "%s(%s)" % (OpenCLTensor.__name__, self.__desc)
+        self.__tensor_cls = type(name, (OpenCLTensor,), {'_OpenCLTensor__device': self})
 
-    def is_available(self) -> bool:
-        return self.__ctx is not None
+    @classmethod
+    def from_context(cls, context:cl.Context) -> "OpenCLDevice":
+        return cls.device_pool.get_device_from_cl_device(context.devices[0])
 
     @property
-    def ctx(self) -> cl.Context:
-        assert self.is_available(), "Device is not available!"
-        return self.__ctx
+    def context(self) -> cl.Context:
+        return self.__context
     @property
     def queue(self) -> cl.CommandQueue:
-        assert self.is_available(), "Device is not available!"
         return self.__queue
     @property
-    def Tensor(self) -> type:
-        assert self.is_available(), "Device is not available!"
-        return self.__tensor_type
-    @property
     def mem_pool(self) -> cl.tools.MemoryPool:
-        assert self.is_available(), "Device is not available!"
         return self.__mem_pool
+    @property
+    def Tensor(self) -> type:
+        return self.__tensor_cls
 
-    @staticmethod
-    def any(device_type:int =cl.device_type.ALL) -> "OpenCLDevice":
-        return OpenCLDevice(0, device_type=device_type)
+    def __repr__(self):
+        return str(self.__cl_device)
+    def __str__(self):
+        return f"{self.__class__.__name__}({self.__desc})"
 
-    @staticmethod
-    def default_device() -> "OpenCLDevice":
-        if OpenCLDevice.__default_device is None:
-            device = OpenCLDevice.any()
-            OpenCLDevice.set_default_device(device)
-        return OpenCLDevice.__default_device
-    @staticmethod
-    def set_default_device(device:"OpenCLDevice"):
-        OpenCLDevice.__default_device = device
+    @classmethod
+    def default_device(cls) -> "OpenCLDevice":
+        if cls.__default_device is None:
+            cls.__default_device = OpenCLDevice()
+        return cls.__default_device
+
+from .tensor import OpenCLTensor

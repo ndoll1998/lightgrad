@@ -140,7 +140,7 @@ if opencl_available:
 
 
 
-class OpenCLGradCheck(unittest.TestCase):
+    class OpenCLGradCheck(unittest.TestCase):
 
         def unary_func(self, f, shape=(3,), l=-1, h=1, eps=1e-3, transpose=False):
             t = np.random.uniform(l, h, size=shape).astype(np.float32)

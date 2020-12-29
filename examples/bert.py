@@ -1,22 +1,15 @@
 import sys
 sys.path.insert(0, "../")
-
-import math
-import json
-
-import numpy as np
-
 import lightgrad.nn as nn
-from lightgrad.autograd import Tensor
-
-import unicodedata
-from collections import OrderedDict
+from lightgrad.autograd import Tensor, Gradients
+from lightgrad.autograd.utils.profiler import Profiler
 
 """ BERT Model """
+import math, json
+import numpy as np
 
-def gelu(x):
-    # fast gelu
-    return 0.5 * x * (1.0 + (x *  0.7978845608 * (1.0 + 0.044715 * x * x)).tanh())
+# fast gelu
+gelu = lambda x: 0.5 * x * (1.0 + (x *  0.7978845608 * (1.0 + 0.044715 * x * x)).tanh())
 
 class Embedding(nn.Module):
     def __init__(self, embedding_dim:int, vocab_size:int):
@@ -24,7 +17,8 @@ class Embedding(nn.Module):
         self.d, self.n = embedding_dim, vocab_size
         self.weight = Tensor.xavier((vocab_size, embedding_dim))
     def forward(self, ids):
-        return self.weight[ids, :]
+        # TODO: hax - we dont support this kind of indexing yet
+        return self.weight.cpu()[ids.cpu()].opencl()
         
 class BertEmbedding(nn.Module):
     def __init__(self,
@@ -249,6 +243,8 @@ class BertForMaskedLM(nn.Module):
         return model
 
 """ Bert Tokenizer """
+import unicodedata
+from collections import OrderedDict
 
 class BertTokenizer(object):
 
@@ -341,14 +337,16 @@ if __name__ == '__main__':
     text = "Alexander's legacy includes the [MASK] diffusion and syncretism which his conquests engendered, such as Greco-Buddhism."    # cultural
     # create model and tokenizer
     tokenizer = BertTokenizer.from_pretrained(pretrained_name)
-    model = BertForMaskedLM.from_pretrained(pretrained_name)
+    model = BertForMaskedLM.from_pretrained(pretrained_name).map_params(lambda p: p.opencl())
     # tokenize and get mask token index
     tokens = tokenizer.tokenize(text)
     mask_i = tokens.index('[MASK]')
     # predict
     input_ids = tokenizer.convert_tokens_to_ids(tokens)
     input_ids = Tensor.from_numpy(np.asarray([input_ids], dtype=np.int32))
-    lm_logits = model.forward(input_ids).numpy()
+    with Gradients.no_grad(), Profiler() as p:
+            lm_logits = model.forward(input_ids).numpy()
+            p.print()
     lm_logits = lm_logits[0, mask_i, :]
     top_k = lm_logits.argsort()[-k:]
     # get tokens of top-k indices

@@ -19,6 +19,8 @@ class OpenCLDevicePool(object):
             cl_devices = sum([p.get_devices(cl.device_type.ALL) for p in cl_plts], [])
         except:
             print("No OpenCL Platforms available!")
+            cl_devices = []
+
         # all populated devices
         self.__cl_devices = cl_devices
         self.__devices = {cl_device: None for cl_device in cl_devices}

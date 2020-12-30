@@ -198,7 +198,7 @@ class __idiv(Function):
 @OpenCLTensor.register_op()
 class fill(Function):
     def forward(ctx, t, val):
-        val = np.asarray(val, dtype=t.dtype)
+        val = t.dtype.type(val)
         cl.enqueue_fill_buffer(t.device.queue, t.data, val, t.offset * t.dtype.itemsize, t.data.size)
         return t
 

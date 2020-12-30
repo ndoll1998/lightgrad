@@ -7,7 +7,7 @@ from functools import lru_cache, reduce
 from itertools import zip_longest, chain
 # utils
 from pyopencl.tools import dtype_to_ctype
-from numpy import int32 as i32
+from numpy import uint32 as i32
 from math import ceil, log2
 # typing
 from typing import Tuple, Union
@@ -186,7 +186,7 @@ def atom(op:str,
         *(t.type(s) for t, s in zip(scalar_dtypes, scalars)),    # scalars
         *shape, *chain(*strides),            # shapes and strides
         *(i32(t.offset) for t in tensors),   # offsets
-        numel                                # number of elements to compute
+        i32(numel)                           # number of elements to compute
     )
     # execute kernel and return output tensors
     cl.enqueue_nd_range_kernel(device.queue, knl, [ceil(numel/block_size)*block_size], [block_size]).wait()    
@@ -378,6 +378,8 @@ def cache_build_reduction_kernel(context,
              // input and output buffers
             __global const {ctype} *g_idata, 
             __global {ctype} *g_odata,
+            // input buffer offset
+            uint offset,
             // input shape and strides (only provided when needed)
             {' '.join(['const uint size_%i,' % i for i in range(ndim)]) if use_strides else ""}
             {' '.join(['const uint stride_%i,' % i for i in range(ndim)]) if use_strides else ""}
@@ -398,8 +400,8 @@ def cache_build_reduction_kernel(context,
             {get_idx("idxB", "gi + ls")}
             // perform first level of reduction,
             // reading from global memory, writing to shared memory
-            {ctype} a = (i < N)? g_idata[idxA] : {neutral};
-            {ctype} b = (i + ls < N)? g_idata[idxB] : {neutral};
+            {ctype} a = (i < N)? g_idata[offset + idxA] : {neutral};
+            {ctype} b = (i + ls < N)? g_idata[offset + idxB] : {neutral};
             sdata[tid] = {reduction};
             barrier(CLK_LOCAL_MEM_FENCE);
 
@@ -477,7 +479,7 @@ def reduction(
     ) if use_strides else tuple()
 
     while (reduce_numel > 1):
-        knl.set_args(T.data, O.data, *stride_args, i32(reduce_numel))
+        knl.set_args(T.data, O.data, i32(T.offset), *stride_args, i32(reduce_numel))
         e = cl.enqueue_nd_range_kernel(device.queue, knl, [keep_numel, n_work_groups * group_size], [1, group_size])
         # update values
         T = O   # input of further iterations is output of current iteration

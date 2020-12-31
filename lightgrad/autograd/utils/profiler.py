@@ -28,9 +28,12 @@ class Profiler(object):
         print("\n")
 
 class Tracker(object):
+    __active = False
     def __init__(self, name:str, backward:bool =False):
-        self.update = lambda td: [p.update(name, td, backward) for p in Profiler._active_profilers]
+        self.update = (lambda td: [p.update(name, td, backward) for p in Profiler._active_profilers]) if not Tracker.__active else lambda td: None
     def __enter__(self, *args):
+        Tracker.__active = True
         self.st = time()
     def __exit__(self, *args):
+        Tracker.__active = False
         self.update(time() - self.st)

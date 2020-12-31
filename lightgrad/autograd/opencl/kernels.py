@@ -18,7 +18,7 @@ __all__ = ['atom', 'dot', 'reduction']
 #   Elementwise Kernel
 #
 
-@lru_cache()
+@lru_cache(maxsize=None)
 def build_atom_kernel(context:cl.Context, 
     op:str,                 # operation to execute on variables
     # buffers
@@ -196,7 +196,7 @@ def atom(op:str,
 #   Matrix Multiplication Kernel
 #
 
-@lru_cache()
+@lru_cache(maxsize=None)
 def cache_build_dot_kernel(context, 
     # data types
     dtype_A:str, 
@@ -334,7 +334,7 @@ def dot(
     idx = (slice(0, B) if (n == 3) else 0, slice(0, M), slice(0, N))
     return O[idx]
 
-@lru_cache()
+@lru_cache(maxsize=None)
 def cache_build_reduction_kernel(context, 
     reduction:str,          # reduction operation
     # data information

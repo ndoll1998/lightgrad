@@ -209,13 +209,13 @@ if opencl_available:
             class Model(nn.Module):
                 def __init__(self):
                     nn.Module.__init__(self)
-                    self.l1 = nn.Linear(8, 16)
-                    self.l2 = nn.Linear(16, 4)
+                    self.l1 = nn.Linear(8, 16, bias=False)
+                    self.l2 = nn.Linear(16, 4, bias=False)
                 def forward(self, x):
                     y = self.l1(x).tanh()
                     y = self.l2(y)
                     return y
-            model = Model().map_params(lambda p: p.opencl())
+            model = Model().map_params(lambda p: p.opencl(device=device))
             self.unary_func(model, shape=(4, 8))
 
         def test_linear_model_compare_gradients(self):
@@ -233,10 +233,10 @@ if opencl_available:
             # create cpu and opencl model with same parameters
             cpu_model, opencl_model = Model(), Model()
             opencl_model.load_parameters(cpu_model.named_parameters())
-            opencl_model.map_params(lambda p: p.opencl())
+            opencl_model.map_params(lambda p: p.opencl(device=device))
             # forward
             x = CpuTensor.uniform(-1, 1, (4, 8), dtype=np.float32)
-            cpu_y, opencl_y = cpu_model(x), opencl_model(x.opencl())
+            cpu_y, opencl_y = cpu_model(x), opencl_model(x.opencl(device=device))
             np.testing.assert_allclose(cpu_y.numpy(), opencl_y.numpy(), atol=5e-4, rtol=5e-4)
             # backpropagate
             cpu_y.backward(True)

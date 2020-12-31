@@ -199,7 +199,7 @@ class __idiv(Function):
 class fill(Function):
     def forward(ctx, t, val):
         val = t.dtype.type(val)
-        cl.enqueue_fill_buffer(t.device.queue, t.data, val, t.offset * t.dtype.itemsize, t.data.size)
+        cl.enqueue_fill_buffer(t.device.queue, t.data, val, t.offset * t.dtype.itemsize, t.numel() * t.dtype.itemsize)
         return t
 
 

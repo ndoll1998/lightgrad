@@ -181,3 +181,7 @@ class exp(Function):
         raw_in_grad_data = raw_y_data * raw_out_grad_data
         return NewTensor(raw_in_grad_data)
 ```
+The minimum set of operations needed for the autograd system are
+```python
+neg, add, mul, pow, fill
+```

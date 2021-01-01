@@ -337,7 +337,7 @@ if __name__ == '__main__':
     text = "Alexander's legacy includes the [MASK] diffusion and syncretism which his conquests engendered, such as Greco-Buddhism."    # cultural
     # create model and tokenizer
     tokenizer = BertTokenizer.from_pretrained(pretrained_name)
-    model = BertForMaskedLM.from_pretrained(pretrained_name).map_params(lambda p: p.opencl())
+    model = BertForMaskedLM.from_pretrained(pretrained_name).map_parameters(lambda p: p.opencl())
     # tokenize and get mask token index
     tokens = tokenizer.tokenize(text)
     mask_i = tokens.index('[MASK]')

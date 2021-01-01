@@ -117,7 +117,7 @@ class AbstractTensor(metaclass=_TensorType):
             else:
                 self.__grad += grad
 
-    def zero_grad(self, graph_traverse:bool =False) -> None:
+    def zero_grad(self, traverse_graph:bool =False) -> None:
         # clear my gradient
         if self.requires_grad:
             if self.grad is None:
@@ -125,10 +125,10 @@ class AbstractTensor(metaclass=_TensorType):
             else:
                 self.__grad.fill(0)
         # recursivly clear gradients of all parents
-        if graph_traverse and (self.__ctx is not None):
+        if traverse_graph and (self.__ctx is not None):
             assert self not in self.__ctx.parent_tensors
             for t in self.__ctx.parent_tensors:
-                t.zero_grad(graph_traverse=True)
+                t.zero_grad(traverse_graph=True)
 
 
     """ Registration of operations and backends """

@@ -215,7 +215,7 @@ if opencl_available:
                     y = self.l1(x).tanh()
                     y = self.l2(y)
                     return y
-            model = Model().map_params(lambda p: p.opencl(device=device))
+            model = Model().map_parameters(lambda p: p.opencl(device=device))
             self.unary_func(model, shape=(4, 8))
 
         def test_linear_model_compare_gradients(self):
@@ -233,7 +233,7 @@ if opencl_available:
             # create cpu and opencl model with same parameters
             cpu_model, opencl_model = Model(), Model()
             opencl_model.load_parameters(cpu_model.named_parameters())
-            opencl_model.map_params(lambda p: p.opencl(device=device))
+            opencl_model.map_parameters(lambda p: p.opencl(device=device))
             # forward
             x = CpuTensor.uniform(-1, 1, (4, 8), dtype=np.float32)
             cpu_y, opencl_y = cpu_model(x), opencl_model(x.opencl(device=device))

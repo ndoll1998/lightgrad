@@ -44,14 +44,14 @@ class Module(object):
         for name, m in self.__modules.items():
             yield from m.named_parameters(prefix=prefix + name, separator=separator)
 
-    def map_params(self, fn):
+    def map_parameters(self, fn):
         # map parameters
         for key, tensor in self.__paramters.items():
             tensor = fn(tensor)
             self.__setattr__(key, tensor)
         # map sub-modules
         for m in self.__modules.values():
-            m.map_params(fn)
+            m.map_parameters(fn)
         return self
 
     def load_parameters(self, param_dict:dict, prefix:str ="", separator:str ='.') -> None:

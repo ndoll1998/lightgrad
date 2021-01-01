@@ -17,7 +17,7 @@ def jacobian(f, x:AbstractTensor) -> np.ndarray:
     # fill jacobian
     for j in range(nj):
         # clear all gradients
-        y.zero_grad(graph_traverse=True)
+        y.zero_grad(traverse_graph=True)
         # pick current output from tensor and backpropagate through it
         # then save gradient in jacobian matrix
         y[j].backward()

@@ -39,7 +39,7 @@ if __name__ == '__main__':
     mnist_train = light.data.MNIST(train=True, shuffle=True, batchsize=128)
     mnist_test = light.data.MNIST(train=False, shuffle=False, batchsize=128)
     # create model
-    model = NN().map_params(to_device)
+    model = NN().map_parameters(to_device)
     optim = light.optim.AdaBelief(model.parameters(), lr=0.001)
 
     steps = 200

@@ -141,28 +141,28 @@ CpuTensor.register_op("__rmatmul__", _bi_reverse(dot))
 
 @CpuTensor.register_op("__iadd__")
 @_use_tensor_data
-class __iadd(Function):
+class iadd(Function):
     def forward(ctx, t, other):
         t += other
         return t
 
 @CpuTensor.register_op("__isub__")
 @_use_tensor_data
-class __isub(Function):
+class isub(Function):
     def forward(ctx, t, other):
         t -= other
         return t
 
 @CpuTensor.register_op("__imul__")
 @_use_tensor_data
-class __imul(Function):
+class imul(Function):
     def forward(ctx, t, other):
         t *= other
         return t
 
 @CpuTensor.register_op("__itruediv__")
 @_use_tensor_data
-class __itruediv(Function):
+class itruediv(Function):
     def forward(ctx, t, other):
         t /= other
         return t
@@ -255,7 +255,7 @@ class relu(Function):
 
 @CpuTensor.register_op("__getitem__")
 @_use_tensor_data
-class __getitem(Function):
+class getitem(Function):
     def forward(ctx, a, idx):
         if isinstance(idx, tuple):
             idx = tuple(t.data if isinstance(t, CpuTensor) else t for t in idx)
@@ -269,7 +269,7 @@ class __getitem(Function):
 
 @CpuTensor.register_op("__setitem__")
 @_use_tensor_data
-class __setitem(Function):
+class setitem(Function):
     def forward(ctx, a, idx, val):
         if isinstance(idx, tuple):
             idx = tuple(t.data if isinstance(t, CpuTensor) else t for t in idx)

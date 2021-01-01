@@ -160,7 +160,7 @@ OpenCLTensor.register_op("__rmatmul__", _bi_reverse(dot))
 """ Inplace Operators """
 
 @OpenCLTensor.register_op('__iadd__')
-class __iadd(Function):
+class iadd(Function):
     def forward(ctx, t, other):
         return kernels.atom(
             a=t, b=other, output='a',
@@ -169,7 +169,7 @@ class __iadd(Function):
         )[0]
 
 @OpenCLTensor.register_op('__isub__')
-class __isub(Function):
+class isub(Function):
     def forward(ctx, t, other):
         return kernels.atom(
             a=t, b=other, output='a',
@@ -178,7 +178,7 @@ class __isub(Function):
         )[0]
 
 @OpenCLTensor.register_op('__imul__')
-class __imul(Function):
+class imul(Function):
     def forward(ctx, t, other):
         return kernels.atom(
             a=t, b=other, output='a',
@@ -187,7 +187,7 @@ class __imul(Function):
         )[0]
         
 @OpenCLTensor.register_op('__itruediv__')
-class __idiv(Function):
+class idiv(Function):
     def forward(ctx, t, other):
         return kernels.atom(
             a=t, b=other, output='a',
@@ -331,7 +331,7 @@ def _idx_view(a, idx):
     return OpenCLTensor(a.data, shape=shape, strides=strides, offset=offset, dtype=a.dtype)
 
 @OpenCLTensor.register_op("__getitem__")
-class __getitem(Function):
+class getitem(Function):
     """ TODO: currently only supports single index or slice (no masking) """
     def forward(ctx, a, idx):
         out = _idx_view(a, idx)
@@ -346,7 +346,7 @@ class __getitem(Function):
         return grad
 
 @OpenCLTensor.register_op("__setitem__")
-class __setitem(Function):
+class setitem(Function):
     """ TODO: currently only supports single index or slice (no masking) """
     def forward(ctx, a, idx, val):
         kernels.atom(

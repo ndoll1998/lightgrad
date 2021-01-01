@@ -1,31 +1,36 @@
 import sys
 sys.path.insert(0, "../")
-import numpy as np
 import lightgrad as light
 import matplotlib.pyplot as plt
 
-if __name__ == '__main__':
+# create tensors
+a = light.uniform(-1, 1, shape=(10, 10))
+b = light.uniform(-1, 1, shape=(10, 10))
+c = light.uniform(-1, 1, shape=(10, 10))
+# objective to minimize
+f = lambda: (a.tanh() + b.sigmoid()) @ (c.relu() - a.sigmoid())
 
-    # create tensors
-    a = light.uniform(-1, 1, shape=(10, 10), dtype=np.float32)
-    b = light.uniform(-1, 1, shape=(10, 10), dtype=np.float32)
-    c = light.uniform(-1, 1, shape=(10, 10), dtype=np.float32)
-    # function to reduce
-    f = lambda: (a.tanh() + b.sigmoid()) @ (c.relu() - a.sigmoid())
+ys = []
+for epoch in range(100):
+    # execute and compute gradients
+    # the argument allow_fill allows for backpropagation 
+    # starting from non-item tensors
+    y = f()
+    y.backward(allow_fill=True)
 
-    # optimizer
-    optim = light.optim.SGD([a, b, c], lr=0.1)
+    # we need to disable gradients for the 
+    # paremeter update
+    with light.no_grad():
+        # now we can easily access the gradients
+        # and update the parameters
+        a -= 0.1 * a.grad
+        b -= 0.1 * b.grad
+        c -= 0.1 * c.grad
 
-    def step():
-        y = f()
-        optim.zero_grad()
-        y.backward(allow_fill=True)
-        optim.step()
-        return y.data.sum()
-    ys = [step() for _ in range(100)]
+    # reset gradients for next iteration
+    y.zero_grad(traverse_graph=True)
+    # store sum in array
+    ys.append(y.sum().item())
 
-    # plot
-    plt.plot(ys)
-    plt.xlabel("Steps")
-    plt.ylabel("y")
-    plt.show()
+plt.plot(ys)
+plt.show()

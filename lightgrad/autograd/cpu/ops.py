@@ -5,13 +5,6 @@ from math import ceil
 
 """ Helpers """
 
-def _bi_reverse(f):
-    """ reverse inputs of bi-operator """
-    return type(f.__name__, (f,), {
-        'forward': lambda ctx, a, b: f.forward(ctx, b, a),
-        'backward': lambda ctx, out_grad: reversed(f.backward(out_grad))
-    })
-
 def _use_tensor_data(fn):
     class Fn(fn):
         def forward(ctx, *args, **kwargs):
@@ -57,7 +50,6 @@ class reshape(Function):
 """ Basic Math Operators """
 
 @CpuTensor.register_op()
-@CpuTensor.register_op("__neg__")
 @_use_tensor_data
 class neg(Function):
     def forward(ctx, a):
@@ -66,8 +58,6 @@ class neg(Function):
         return -out_grad
 
 @CpuTensor.register_op()
-@CpuTensor.register_op("__add__")
-@CpuTensor.register_op("__radd__")
 @_use_tensor_data
 class add(Function):
     def forward(ctx, a, b):
@@ -75,8 +65,7 @@ class add(Function):
     def backward(ctx, out_grad):
         return out_grad, out_grad
 
-@CpuTensor.register_op()
-@CpuTensor.register_op("__sub__")
+@CpuTensor.register_op(override=True)
 @_use_tensor_data
 class sub(Function):
     def forward(ctx, a, b):
@@ -85,8 +74,6 @@ class sub(Function):
         return out_grad, -out_grad
 
 @CpuTensor.register_op()
-@CpuTensor.register_op("__mul__")
-@CpuTensor.register_op("__rmul__")
 @_use_tensor_data
 class mul(Function):
     def forward(ctx, a, b):
@@ -96,8 +83,7 @@ class mul(Function):
         a, b = ctx.get_saved_tensors()
         return out_grad * b, a * out_grad
 
-@CpuTensor.register_op()
-@CpuTensor.register_op("__truediv__")
+@CpuTensor.register_op(override=True)
 @_use_tensor_data
 class div(Function):
     def forward(ctx, a, b):
@@ -108,7 +94,6 @@ class div(Function):
         return out_grad / b, -a / b**2 * out_grad
 
 @CpuTensor.register_op()
-@CpuTensor.register_op("__pow__")
 @_use_tensor_data
 class pow(Function):
     def forward(ctx, a, b):
@@ -130,37 +115,30 @@ class dot(Function):
         a, b = ctx.get_saved_tensors()
         return out_grad @ b.T, a.T @ out_grad
 
-# reverse operators for non-symmetrical operators
-CpuTensor.register_op("__rsub__", _bi_reverse(sub))
-CpuTensor.register_op("__rtruediv__", _bi_reverse(div))
-CpuTensor.register_op("__rpow__", _bi_reverse(pow))
-CpuTensor.register_op("__rmatmul__", _bi_reverse(dot))
-
-
 """ Inplace Operators """
 
-@CpuTensor.register_op("__iadd__")
+@CpuTensor.register_op("__iadd__", override=True)
 @_use_tensor_data
 class iadd(Function):
     def forward(ctx, t, other):
         t += other
         return t
 
-@CpuTensor.register_op("__isub__")
+@CpuTensor.register_op("__isub__", override=True)
 @_use_tensor_data
 class isub(Function):
     def forward(ctx, t, other):
         t -= other
         return t
 
-@CpuTensor.register_op("__imul__")
+@CpuTensor.register_op("__imul__", override=True)
 @_use_tensor_data
 class imul(Function):
     def forward(ctx, t, other):
         t *= other
         return t
 
-@CpuTensor.register_op("__itruediv__")
+@CpuTensor.register_op("__itruediv__", override=True)
 @_use_tensor_data
 class itruediv(Function):
     def forward(ctx, t, other):
@@ -218,7 +196,7 @@ class log(Function):
         x, = ctx.get_saved_tensors()
         return (1 / x) * out_grad
 
-@CpuTensor.register_op()
+@CpuTensor.register_op(override=True)
 @_use_tensor_data
 class sigmoid(Function):
     def forward(ctx, t):
@@ -229,7 +207,7 @@ class sigmoid(Function):
         y, = ctx.get_saved_tensors()
         return y * (1 - y) * out_grad
 
-@CpuTensor.register_op()
+@CpuTensor.register_op(override=True)
 @_use_tensor_data
 class tanh(Function):
     def forward(ctx, t):

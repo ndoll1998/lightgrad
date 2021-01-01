@@ -134,11 +134,14 @@ class AbstractTensor(metaclass=_TensorType):
     """ Registration of operations and backends """
 
     @classmethod
-    def register_op(cls, name:str =None, op:type =None):
+    def register_op(cls, name:str =None, op:type =None, override:bool =False):
         if op is not None:
             # direct use
             if not issubclass(op, Function):
                 raise TypeError("Operators must inherit from Function! (%s)" % op.__name__)
+            # override
+            if not override and hasattr(cls, name):
+                raise RuntimeError("Function %s already registered to %s!" % (name, cls.__name__))
             # not sure why this is necessary, but without dispatch wrapper
             # the op function is treatet as a static member
             dispatch = (lambda self, *args, **kwargs: op(self, *args, **kwargs))
@@ -146,7 +149,7 @@ class AbstractTensor(metaclass=_TensorType):
             return op
         else:
             # use as decorator
-            return lambda op: cls.register_op(name if name is not None else op.__name__, op)
+            return lambda op: cls.register_op(name if name is not None else op.__name__, op, override=override)
 
     @staticmethod
     def register_backend(name:str, Tensor_cls:type):

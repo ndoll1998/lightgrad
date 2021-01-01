@@ -4,6 +4,70 @@ from .tensor import AbstractTensor
 from .func import Function, WrapperFunction
 from functools import reduce
 
+""" Basic Math Operators """
+
+# negation operator
+AbstractTensor.__neg__ = lambda t: t.neg()
+# power operator
+AbstractTensor.__pow__ = lambda a, b: a.pow(b)
+# addition operator
+AbstractTensor.__add__ = lambda a, b: a.add(b)
+AbstractTensor.__iadd__ = lambda a, b: a.add(b)
+AbstractTensor.__radd__ = lambda a, b: a.add(b)
+# multiplication operator
+AbstractTensor.__mul__ = lambda a, b: a.mul(b)
+AbstractTensor.__imul__ = lambda a, b: a.mul(b)
+AbstractTensor.__rmul__ = lambda a, b: a.mul(b)
+
+@AbstractTensor.register_op()
+@AbstractTensor.register_op("__sub__")
+@AbstractTensor.register_op("__isub__")
+@WrapperFunction.from_function
+def sub(a, b):
+    """ requires add and neg operator """
+    return a + (-b)
+
+@AbstractTensor.register_op()
+@AbstractTensor.register_op("__truediv__")
+@AbstractTensor.register_op("__itruediv__")
+@WrapperFunction.from_function
+def div(a, b):
+    """ requires mul and pow operator """
+    return a * (b ** -1)
+
+@AbstractTensor.register_op("__rsub__")
+@WrapperFunction.from_function
+def rsub(b, a):
+    """ requires sub operator """
+    return AbstractTensor.sub(a, b)
+@AbstractTensor.register_op("__rtruediv__")
+@WrapperFunction.from_function
+def rdiv(b, a):
+    """ requires div operator """
+    return AbstractTensor.div(a, b)
+
+
+""" Non-Linear Activations """
+
+@AbstractTensor.register_op()
+@WrapperFunction.from_function
+def sigmoid(t):
+    return 1 / (1 + t.neg().exp())
+
+@AbstractTensor.register_op()
+@WrapperFunction.from_function
+def tanh(t):
+    return t.sigmoid() * 2 - 1
+
+@AbstractTensor.register_op()
+@WrapperFunction.from_function
+def softmax(t, axis:int =-1):
+    exps = (t - t.max(axis=axis, keepdims=True)).exp()
+    return exps / exps.sum(axis=axis, keepdims=True)
+
+
+""" Pooling """
+
 @AbstractTensor.register_op()
 class pad(Function):
     def forward(ctx, t, padding:int, dims:tuple =(-2, -1), value:float =0.0):
@@ -59,12 +123,6 @@ class pool(Function):
             grad[tuple(slice(d) for d in cut_shape)] = cut_grad
             return grad
         return cut_grad
-
-@AbstractTensor.register_op()
-@WrapperFunction.from_function
-def softmax(t, axis:int =-1):
-    exps = (t - t.max(axis=axis, keepdims=True)).exp()
-    return exps / exps.sum(axis=axis, keepdims=True)
 
 @AbstractTensor.register_op()
 @WrapperFunction.from_function

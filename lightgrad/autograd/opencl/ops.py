@@ -4,17 +4,6 @@ from ..func import Function
 from .tensor import OpenCLTensor
 from . import kernels
 
-""" Helpers """
-
-def _bi_reverse(f):
-    """ reverse inputs of bi-operator """
-    class F(f):
-        def forward(ctx, a, b):
-            return f.forward(ctx, b, a)
-        def backward(ctx, out_grad):
-            return reversed(f.backward(out_grad))
-    return F
-
 """ Transformations """
 
 @OpenCLTensor.register_op()
@@ -49,7 +38,6 @@ class reshape(Function):
 """ Basic Math Operators """
 
 @OpenCLTensor.register_op()
-@OpenCLTensor.register_op('__neg__')
 class neg(Function):
     def forward(ctx, a):
         return kernels.atom(
@@ -60,8 +48,6 @@ class neg(Function):
         return -out_grad
 
 @OpenCLTensor.register_op()
-@OpenCLTensor.register_op('__add__')
-@OpenCLTensor.register_op('__radd__')
 class add(Function):
     def forward(ctx, a, b):
         return kernels.atom(
@@ -71,8 +57,7 @@ class add(Function):
     def backward(ctx, out_grad):
         return out_grad, out_grad
 
-@OpenCLTensor.register_op()
-@OpenCLTensor.register_op('__sub__')
+@OpenCLTensor.register_op(override=True)
 class sub(Function):
     def forward(ctx, a, b):
         return kernels.atom(
@@ -83,8 +68,6 @@ class sub(Function):
         return out_grad, -out_grad
 
 @OpenCLTensor.register_op()
-@OpenCLTensor.register_op('__mul__')
-@OpenCLTensor.register_op('__rmul__')
 class mul(Function):
     def forward(ctx, a, b):
         ctx.save_for_backward(a, b)
@@ -99,8 +82,7 @@ class mul(Function):
             op='a_grad = b * g; b_grad = a * g;'
         )
 
-@OpenCLTensor.register_op()
-@OpenCLTensor.register_op("__truediv__")
+@OpenCLTensor.register_op(override=True)
 class div(Function):
     def forward(ctx, a, b):
         ctx.save_for_backward(a, b)
@@ -116,7 +98,6 @@ class div(Function):
         )
 
 @OpenCLTensor.register_op()
-@OpenCLTensor.register_op("__pow__")
 class pow(Function):
     def forward(ctx, a, b):
         y, = kernels.atom(
@@ -150,16 +131,9 @@ class dot(Function):
         b_grad = kernels.dot(a.transpose(0, 2, 1), out_grad)
         return a_grad.reshape(*a_shape), b_grad.reshape(*b_shape)
 
-# reverse operators for non-symmetrical operators
-OpenCLTensor.register_op("__rsub__", _bi_reverse(sub))
-OpenCLTensor.register_op("__rtruediv__", _bi_reverse(div))
-OpenCLTensor.register_op("__rpow__", _bi_reverse(pow))
-OpenCLTensor.register_op("__rmatmul__", _bi_reverse(dot))
-
-
 """ Inplace Operators """
 
-@OpenCLTensor.register_op('__iadd__')
+@OpenCLTensor.register_op('__iadd__', override=True)
 class iadd(Function):
     def forward(ctx, t, other):
         return kernels.atom(
@@ -168,7 +142,7 @@ class iadd(Function):
             additional_read=('a',)
         )[0]
 
-@OpenCLTensor.register_op('__isub__')
+@OpenCLTensor.register_op('__isub__', override=True)
 class isub(Function):
     def forward(ctx, t, other):
         return kernels.atom(
@@ -177,7 +151,7 @@ class isub(Function):
             additional_read=('a',)
         )[0]
 
-@OpenCLTensor.register_op('__imul__')
+@OpenCLTensor.register_op('__imul__', override=True)
 class imul(Function):
     def forward(ctx, t, other):
         return kernels.atom(
@@ -186,7 +160,7 @@ class imul(Function):
             additional_read=('a',)
         )[0]
         
-@OpenCLTensor.register_op('__itruediv__')
+@OpenCLTensor.register_op('__itruediv__', override=True)
 class idiv(Function):
     def forward(ctx, t, other):
         return kernels.atom(
@@ -266,7 +240,7 @@ class log(Function):
             op='o = (1 / t) * g'
         )[0]
 
-@OpenCLTensor.register_op()
+@OpenCLTensor.register_op(override=True)
 class sigmoid(Function):
     def forward(ctx, t):
         y, = kernels.atom(
@@ -282,7 +256,7 @@ class sigmoid(Function):
             op='o = y * (1-y) * g'
         )[0]
 
-@OpenCLTensor.register_op()
+@OpenCLTensor.register_op(override=True)
 class tanh(Function):
     def forward(ctx, t):
         y, = kernels.atom(

@@ -120,8 +120,6 @@ if opencl_available:
             opencl_check_gradients("sub", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True)
         def test_mul(self):
             opencl_check_gradients("mul", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True)
-            self.simple_binary_func(OpenCLTensor.mul, transpose=False)
-            self.simple_binary_func(OpenCLTensor.mul, transpose=True)
         def test_div(self):
             opencl_check_gradients("div", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True, lowhigh=(0.1, 10))
             opencl_check_gradients("div", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True, lowhigh=(-10, -0.1))

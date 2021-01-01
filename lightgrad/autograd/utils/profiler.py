@@ -28,12 +28,13 @@ class Profiler(object):
         print("\n")
 
 class Tracker(object):
-    __active = False
+    __n_active = 0
     def __init__(self, name:str, backward:bool =False):
-        self.update = (lambda td: [p.update(name, td, backward) for p in Profiler._active_profilers]) if not Tracker.__active else lambda td: None
+        update = lambda td: [p.update(name, td, backward) for p in Profiler._active_profilers]
+        self.update = update if Tracker.__n_active == 0 else lambda td: None
     def __enter__(self, *args):
-        Tracker.__active = True
+        Tracker.__n_active += 1
         self.st = time()
     def __exit__(self, *args):
-        Tracker.__active = False
+        Tracker.__n_active = max(0, Tracker.__n_active - 1)
         self.update(time() - self.st)

@@ -34,7 +34,9 @@ for epoch in range(100):
         c -= 0.1 * c.grad
 
     # reset gradients for next iteration
-    y.zero_grad(traverse_graph=True)
+    a.zero_grad()
+    b.zero_grad()
+    c.zero_grad()
 ```
 
 ### Optimizers

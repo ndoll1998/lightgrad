@@ -1,21 +1,20 @@
 import sys
 sys.path.insert(0, "../")
 import numpy as np
+import lightgrad as light
 import matplotlib.pyplot as plt
-from lightgrad.autograd import Tensor
-from lightgrad.optim import SGD
 
 if __name__ == '__main__':
 
     # create tensors
-    a = Tensor(np.random.uniform(-1, 1, size=(10, 10)).astype(np.float32))
-    b = Tensor(np.random.uniform(-1, 1, size=(10, 10)).astype(np.float32))
-    c = Tensor(np.random.uniform(-1, 1, size=(10, 10)).astype(np.float32))
+    a = light.uniform(-1, 1, shape=(10, 10), dtype=np.float32)
+    b = light.uniform(-1, 1, shape=(10, 10), dtype=np.float32)
+    c = light.uniform(-1, 1, shape=(10, 10), dtype=np.float32)
     # function to reduce
-    f = lambda: b.sigmoid() @ c.relu()
+    f = lambda: (a.tanh() + b.sigmoid()) @ (c.relu() - a.sigmoid())
 
     # optimizer
-    optim = SGD([a, b], lr=0.1)
+    optim = light.optim.SGD([a, b, c], lr=0.1)
 
     def step():
         y = f()

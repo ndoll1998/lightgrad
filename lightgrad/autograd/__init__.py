@@ -4,5 +4,7 @@ from .func import Function
 from .tensor import AbstractTensor
 from .cpu import CpuTensor
 from .opencl import OpenCLTensor, OpenCLDevice
-# default is cpu tensor
-from .cpu.tensor import CpuTensor as Tensor
+
+# shortcuts
+Tensor = CpuTensor      # defualt to cpu tensor
+no_grad = Gradients.no_grad

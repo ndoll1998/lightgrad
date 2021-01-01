@@ -19,7 +19,7 @@ __all__ = ['atom', 'dot', 'reduction']
 #
 
 @lru_cache(maxsize=None)
-def build_atom_kernel(context:cl.Context, 
+def cache_build_atom_kernel(context:cl.Context, 
     op:str,                 # operation to execute on variables
     # buffers
     buffers:tuple,          # unique names of variables / buffers
@@ -145,7 +145,7 @@ def atom(op:str,
 
     shapes = (t.shape for t in tensors)
     strides = (t.strides for t in tensors)
-    # broadcast shape and compute strides
+    # broadcast shape
     shape = map(max, zip_longest(*map(reversed, shapes), fillvalue=1))
     shape = tuple(map(i32, shape))[::-1]
     ndim, numel = len(shape), reduce(lambda x, y: x * y, shape, 1)
@@ -171,7 +171,7 @@ def atom(op:str,
     buffer_dtypes = tuple(map(lambda t: t.dtype, tensors))
     scalar_dtypes = tuple(map(lambda s: np.dtype(type(s)), scalars))
     # build kernel and set arguments
-    knl = build_atom_kernel(device.context,
+    knl = cache_build_atom_kernel(device.context,
         op=op,
         buffers=tensor_names,
         buffer_dtypes=buffer_dtypes,
@@ -333,6 +333,11 @@ def dot(
     # remove padding from output
     idx = (slice(0, B) if (n == 3) else 0, slice(0, M), slice(0, N))
     return O[idx]
+
+
+#
+# Reduction Kernel
+#
 
 @lru_cache(maxsize=None)
 def cache_build_reduction_kernel(context, 

@@ -5,12 +5,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import trange
 
-from lightgrad import nn
-from lightgrad.loss import cross_entropy, mse
-from lightgrad.optim import AdaBelief
-from lightgrad.data import MNIST_Train, MNIST_Test
-
-from lightgrad.autograd import Tensor
+import lightgrad as light
+import lightgrad.nn as nn
 from lightgrad.autograd.utils.profiler import Profiler
 
 class CNN(nn.Module):
@@ -28,8 +24,8 @@ class CNN(nn.Module):
 class NN(nn.Module):
     def __init__(self):
         nn.Module.__init__(self)
-        self.l1 = nn.Linear(28 * 28, 128)
-        self.l2 = nn.Linear(128, 10)
+        self.l1 = nn.Linear(28 * 28, 128, bias=False)
+        self.l2 = nn.Linear(128, 10, bias=False)
     def forward(self, x):
         y = self.l1(x.reshape(-1, 28 * 28)).relu()
         y = self.l2(y)
@@ -38,13 +34,13 @@ class NN(nn.Module):
 if __name__ == '__main__':
 
     # device
-    to_device = lambda t: t #.opencl()
+    to_device = lambda t: t.opencl()
     # load datasets
-    mnist_train = MNIST_Train(shuffle=True, batchsize=128)
-    mnist_test = MNIST_Test(shuffle=False, batchsize=128)
+    mnist_train = light.data.MNIST(train=True, shuffle=True, batchsize=128)
+    mnist_test = light.data.MNIST(train=False, shuffle=False, batchsize=128)
     # create model
-    model = CNN().map_params(to_device)
-    optim = AdaBelief(model.parameters(), lr=0.001)
+    model = NN().map_params(to_device)
+    optim = light.optim.AdaBelief(model.parameters(), lr=0.001)
 
     steps = 200
     # train model
@@ -59,9 +55,9 @@ if __name__ == '__main__':
             # predict and compute error
             y = model(to_device(x))
             # l = cross_entropy(y, to_device(y_hat))
-            one_hot = Tensor.zeros((idx.shape[0], 10))
+            one_hot = light.zeros((idx.shape[0], 10))
             one_hot[range(idx.shape[0]), y_hat] = 1
-            l = mse(y, to_device(one_hot))
+            l = light.loss.mse(y, to_device(one_hot))
             # optimize
             optim.zero_grad()
             l.backward()

@@ -30,18 +30,19 @@ class Dataset(object):
 
 """ MNIST Dataset """
 
-class MNIST_Train(Dataset):
-    def __init__(self, n:int =60_000, **kwargs):
+class MNIST(Dataset):
+    def __init__(self, train:bool =True, n:int =60_000, **kwargs):
         import gzip
+        n = min(n, 60_000 if train else 10_000)
+        # build urls
+        images_url = "http://yann.lecun.com/exdb/mnist/%s" % ("train-images-idx3-ubyte.gz" if train else "t10k-images-idx3-ubyte.gz")
+        labels_url = "http://yann.lecun.com/exdb/mnist/%s" % ("train-labels-idx1-ubyte.gz" if train else "t10k-labels-idx1-ubyte.gz")
+        # fetch and parse
         parse = lambda dat: np.frombuffer(gzip.decompress(dat), dtype=np.uint8)
-        X = Tensor(parse(fetch("http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz"))[0x10:0x10 + n*28*28].reshape((-1, 28, 28)) / 255, requires_grad=False)
-        Y = Tensor(parse(fetch("http://yann.lecun.com/exdb/mnist/train-labels-idx1-ubyte.gz"))[8:8+n], dtype=np.int16, requires_grad=False)
-        Dataset.__init__(self, (X, Y), **kwargs)
-
-class MNIST_Test(Dataset):
-    def __init__(self, n:int =10_000, **kwargs):
-        import gzip
-        parse = lambda dat: np.frombuffer(gzip.decompress(dat), dtype=np.uint8)
-        X = Tensor(parse(fetch("http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz"))[0x10:0x10 + n*28*28].reshape((-1, 28, 28)) / 255, requires_grad=False)
-        Y = Tensor(parse(fetch("http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz"))[8:8+n], dtype=np.int16, requires_grad=False)
-        Dataset.__init__(self, (X, Y), **kwargs)
+        X_raw = parse(fetch(images_url))[0x10:0x10 + n*28*28].reshape((-1, 28, 28)).astype(np.float32)
+        Y_raw = parse(fetch(labels_url))[8:8+n].astype(np.int16)
+        # initialize dataset
+        Dataset.__init__(self, (
+            Tensor.from_numpy(X_raw / 255, requires_grad=False), 
+            Tensor.from_numpy(Y_raw, requires_grad=False)
+        ), **kwargs)

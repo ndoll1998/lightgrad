@@ -1,7 +1,7 @@
 import sys
 sys.path.insert(0, "../")
+import lightgrad as light
 import lightgrad.nn as nn
-from lightgrad.autograd import Tensor, Gradients
 from lightgrad.autograd.utils.profiler import Profiler
 
 """ BERT Model """
@@ -15,7 +15,7 @@ class Embedding(nn.Module):
     def __init__(self, embedding_dim:int, vocab_size:int):
         nn.Module.__init__(self)
         self.d, self.n = embedding_dim, vocab_size
-        self.weight = Tensor.xavier((vocab_size, embedding_dim))
+        self.weight = light.xavier((vocab_size, embedding_dim))
     def forward(self, ids):
         # TODO: hax - we dont support this kind of indexing yet
         return self.weight.cpu()[ids.cpu()].opencl()
@@ -207,7 +207,7 @@ class BertForMaskedLM(nn.Module):
         self.cls.predictions.transform.LayerNorm = nn.LayerNorm(hidden_size)
         # decoder
         self.cls.predictions.decoder = nn.Linear(hidden_size, vocab_size, bias=False)
-        self.cls.predictions.bias = Tensor.zeros(vocab_size)
+        self.cls.predictions.bias = light.zeros(vocab_size)
     def forward(self, 
         input_ids, 
         attention_mask=None,
@@ -343,8 +343,8 @@ if __name__ == '__main__':
     mask_i = tokens.index('[MASK]')
     # predict
     input_ids = tokenizer.convert_tokens_to_ids(tokens)
-    input_ids = Tensor.from_numpy(np.asarray([input_ids], dtype=np.int32))
-    with Gradients.no_grad(), Profiler() as p:
+    input_ids = light.from_numpy(np.asarray([input_ids], dtype=np.int32))
+    with light.no_grad(), Profiler() as p:
             lm_logits = model.forward(input_ids).numpy()
             p.print()
     lm_logits = lm_logits[0, mask_i, :]

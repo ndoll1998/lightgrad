@@ -110,7 +110,7 @@ class pow(Function):
         a, b, y = ctx.get_saved_tensors()
         return kernels.atom(
             a=a, b=b, y=y, g=out_grad, output=('a_grad', 'b_grad'),
-            op="a_grad = b * pow(a, b-1) * g; b_grad = g * y * log(a)"
+            op="a_grad = b * pow((float)a, (float)b-1) * g; b_grad = g * y * log(a)"
         )
 
 @OpenCLTensor.register_op()

@@ -1,12 +1,16 @@
 import unittest
 # import lightgrad
-from lightgrad.autograd import CpuTensor
 from lightgrad.autograd import OpenCLTensor
 from lightgrad.autograd.opencl import Device
-from lightgrad.autograd.utils.gradcheck import assert_gradcheck
 # set random seed
 import numpy as np
 np.random.seed(1337)
+
+# test helpers
+from .common import compare_with_numpy, compare_with_cpu, check_gradients
+opencl_compare_with_numpy = lambda *args, **kwargs: compare_with_numpy(OpenCLTensor, *args, **kwargs)
+opencl_compare_with_cpu = lambda *args, **kwargs: compare_with_cpu(OpenCLTensor, *args, **kwargs)
+opencl_check_gradients = lambda *args, **kwargs: check_gradients(OpenCLTensor, *args, **kwargs)
 
 # get any device to use
 try:
@@ -19,189 +23,113 @@ except:
 if opencl_available:
     class Test_OpenCLTensor(unittest.TestCase):
 
-        def compare_unary_func(self, cpu_f, opencl_f, shape=(64, 64), l=-1, h=1, eps=1e-3, transpose=False):
-            # create random numpy array
-            a = np.random.uniform(l, h, size=shape).astype(np.float32)
-            # create cpu and opencl tensor and compare
-            cpu_tensor = CpuTensor.from_numpy(a)
-            opencl_tensor = device.Tensor.from_numpy(a)
-            if transpose:
-                a = a.transpose(1, 0)
-                cpu_tensor = cpu_tensor.transpose(1, 0)
-                opencl_tensor = opencl_tensor.transpose(1, 0)
-            # apply functions
-            cpu_out = cpu_f(cpu_tensor).numpy()
-            opencl_out = opencl_f(opencl_tensor).numpy()
-            # compare outputs
-            np.testing.assert_allclose(opencl_out, cpu_out, rtol=1e-5, atol=1e-5)
-
-        def compare_binary_func(self, cpu_f, opencl_f, a_shape=(64, 64), b_shape=(64, 64), l=-1, h=1, eps=1e-3, transpose=False):
-            # create random numpy arrays
-            a = np.random.uniform(l, h, size=a_shape).astype(np.float32)
-            b = np.random.uniform(l, h, size=b_shape).astype(np.float32)
-            # create cpu and opencl tensor and compare
-            cpu_a, cpu_b = CpuTensor.from_numpy(a), CpuTensor.from_numpy(b)
-            opencl_a, opencl_b = device.Tensor.from_numpy(a), device.Tensor.from_numpy(b)
-            if transpose:
-                a, b = a.transpose(1, 0), b.transpose(1, 0)
-                cpu_a, cpu_b = cpu_a.transpose(1, 0), cpu_b.transpose(1, 0)
-                opencl_a, opencl_b = opencl_a.transpose(1, 0), opencl_b.transpose(1, 0)
-            # apply functions
-            cpu_out = cpu_f(cpu_a, cpu_b).numpy()
-            opencl_out = opencl_f(opencl_a, opencl_b).numpy()
-            # compare outputs
-            np.testing.assert_allclose(opencl_out, cpu_out, rtol=1e-5, atol=1e-5)
-
-        """ basic """
-
-        def test_atom_kernel(self):
-            from lightgrad.autograd.opencl.kernels import atom
-            identity_kernel = lambda t: atom(t=t, output='o', op='o=t')[0]
-            self.compare_unary_func(cpu_f=lambda t: t, opencl_f=identity_kernel)
-
-        def test_atom_kernel_broadcast(self):
-            from lightgrad.autograd.opencl.kernels import atom
-            add_kernel = lambda a,b: atom(a=a, b=b, output='o', op='o=a+b')[0]
-            self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(64, 64), b_shape=(1, 64))
-            self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(64, 64), b_shape=(64, 1))
-            self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(1, 64), b_shape=(64, 64))
-            self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(64, 1), b_shape=(64, 64))
-            self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(64, 1), b_shape=(1, 64))
-            self.compare_binary_func(cpu_f=lambda a, b: a + b, opencl_f=add_kernel, a_shape=(1, 64), b_shape=(64, 1))
-
-        def test_atom_kernel_strides(self):
-            from lightgrad.autograd.opencl.kernels import atom
-            identity_kernel = lambda t: atom(t=t, output='o', op='o=t')[0]
-            self.compare_unary_func(cpu_f=lambda t: t, opencl_f=identity_kernel, transpose=True)
-
         """ transformations """
-
         def test_transpose(self):
             f = lambda t: t.transpose(1, 0)
-            self.compare_unary_func(f, f, transpose=False)
-            self.compare_unary_func(f, f, transpose=True)
+            opencl_compare_with_numpy(f, shapes=[(64, 64)])
         def test_reshape(self):
-            f = lambda t: t.reshape(t.numel())
-            self.compare_unary_func(f, f, transpose=False)
-            self.compare_unary_func(f, f, transpose=True)
+            f = lambda t: t.reshape(-1)
+            opencl_compare_with_numpy(f, shapes=[(64, 64)])
 
         """ unary operators """
         def test_neg(self):
-            self.compare_unary_func(CpuTensor.neg, OpenCLTensor.neg)
+            opencl_compare_with_numpy(lambda x: -x, shapes=[(64, 64)])
         def test_sin(self):
-            self.compare_unary_func(CpuTensor.sin, OpenCLTensor.sin)
+            opencl_compare_with_numpy("sin", shapes=[(64, 64)])
         def test_cos(self):
-            self.compare_unary_func(CpuTensor.cos, OpenCLTensor.cos)
+            opencl_compare_with_numpy("cos", shapes=[(64, 64)])
         def test_exp(self):
-            self.compare_unary_func(CpuTensor.exp, OpenCLTensor.exp)
+            opencl_compare_with_numpy("exp", shapes=[(64, 64)])
         def test_log(self):
-            self.compare_unary_func(CpuTensor.log, OpenCLTensor.log, l=0.1, h=10)
+            opencl_compare_with_numpy("log", shapes=[(64, 64)], lowhigh=(0, 1))
         def test_sigmoid(self):
-            self.compare_unary_func(CpuTensor.sigmoid, OpenCLTensor.sigmoid)
+            opencl_compare_with_cpu("sigmoid", shapes=[(64, 64)])
         def test_tanh(self):
-            self.compare_unary_func(CpuTensor.tanh, OpenCLTensor.tanh)
+            opencl_compare_with_numpy("tanh", shapes=[(64, 64)])
         def test_relu(self):
-            self.compare_unary_func(CpuTensor.relu, OpenCLTensor.relu)
+            opencl_compare_with_cpu("relu", shapes=[(64, 64)])
             
         """ binary operators """
         def test_add(self):
-            self.compare_binary_func(CpuTensor.add, OpenCLTensor.add)
+            opencl_compare_with_numpy(lambda a, b: a + b, shapes=[(64, 64), (64, 64)], broadcast=True)
         def test_sub(self):
-            self.compare_binary_func(CpuTensor.sub, OpenCLTensor.sub)
+            opencl_compare_with_numpy(lambda a, b: a - b, shapes=[(64, 64), (64, 64)], broadcast=True)
         def test_mul(self):
-            self.compare_binary_func(CpuTensor.mul, OpenCLTensor.mul)
+            opencl_compare_with_numpy(lambda a, b: a * b, shapes=[(64, 64), (64, 64)], broadcast=True)
         def test_div(self):
-            self.compare_binary_func(CpuTensor.div, OpenCLTensor.div, l=0.1, h=10)
-            self.compare_binary_func(CpuTensor.div, OpenCLTensor.div, l=-10, h=-0.1)
-        def test_dot(self):
-            self.compare_binary_func(CpuTensor.dot, OpenCLTensor.dot, a_shape=(64, 64), b_shape=(64, 64))
-            self.compare_binary_func(CpuTensor.dot, OpenCLTensor.dot, a_shape=(32, 64), b_shape=(128, 32), transpose=True)
-            self.compare_binary_func(CpuTensor.dot, OpenCLTensor.dot, a_shape=(13, 54), b_shape=(54, 76))
+            opencl_compare_with_numpy(lambda a, b: a / b, shapes=[(64, 64), (64, 64)], broadcast=True, lowhigh=(0.1, 10))
+            opencl_compare_with_numpy(lambda a, b: a / b, shapes=[(64, 64), (64, 64)], broadcast=True, lowhigh=(-10, -0.1))
         def test_pow(self):
-            self.compare_binary_func(CpuTensor.pow, OpenCLTensor.pow, l=0, h=1)
+            opencl_compare_with_numpy(lambda a, b: a ** b, shapes=[(64, 64), (64, 64)], broadcast=True, lowhigh=(0, 1))
+        def test_dot(self):
+            opencl_compare_with_numpy(lambda a, b: a @ b, shapes=[(64, 64), (64, 64)], transpose=True)
+            opencl_compare_with_numpy(lambda a, b: a @ b, shapes=[(32, 64), (64, 128)])
+            opencl_compare_with_numpy(lambda a, b: a @ b, shapes=[(13, 54), (54, 76)])
             
         """ Reductions/Selections """
         def test_sum(self):
-            self.compare_unary_func(CpuTensor.sum, OpenCLTensor.sum, shape=(64, 64))
-            self.compare_unary_func(lambda t: CpuTensor.sum(t, axis=0), lambda t: OpenCLTensor.sum(t, axis=0), shape=(64, 64))
-            self.compare_unary_func(lambda t: CpuTensor.sum(t, axis=1), lambda t: OpenCLTensor.sum(t, axis=1), shape=(64, 64))
+            opencl_compare_with_numpy("sum", shapes=[(64, 64)])
+            opencl_compare_with_numpy("sum", shapes=[(64, 64)], axis=0)
+            opencl_compare_with_numpy("sum", shapes=[(64, 64)], axis=1)
         def test_mean(self):
-            self.compare_unary_func(CpuTensor.mean, OpenCLTensor.mean, shape=(64, 64))
-            self.compare_unary_func(lambda t: CpuTensor.mean(t, axis=0), lambda t: OpenCLTensor.mean(t, axis=0), shape=(64, 64))
-            self.compare_unary_func(lambda t: CpuTensor.mean(t, axis=1), lambda t: OpenCLTensor.mean(t, axis=1), shape=(64, 64))
+            opencl_compare_with_numpy("mean", shapes=[(64, 64)])
+            opencl_compare_with_numpy("mean", shapes=[(64, 64)], axis=0)
+            opencl_compare_with_numpy("mean", shapes=[(64, 64)], axis=1)
         def test_min(self):
-            self.compare_unary_func(CpuTensor.min, OpenCLTensor.min, shape=(64, 64))
-            self.compare_unary_func(lambda t: CpuTensor.min(t, axis=0), lambda t: OpenCLTensor.min(t, axis=0), shape=(64, 64))
-            self.compare_unary_func(lambda t: CpuTensor.min(t, axis=1), lambda t: OpenCLTensor.min(t, axis=1), shape=(64, 64))
+            opencl_compare_with_numpy("min", shapes=[(64, 64)])
+            opencl_compare_with_numpy("min", shapes=[(64, 64)], axis=0)
+            opencl_compare_with_numpy("min", shapes=[(64, 64)], axis=1)
         def test_max(self):
-            self.compare_unary_func(CpuTensor.max, OpenCLTensor.max, shape=(64, 64))
-            self.compare_unary_func(lambda t: CpuTensor.max(t, axis=0), lambda t: OpenCLTensor.max(t, axis=0), shape=(64, 64))
-            self.compare_unary_func(lambda t: CpuTensor.max(t, axis=1), lambda t: OpenCLTensor.max(t, axis=1), shape=(64, 64))
+            opencl_compare_with_numpy("max", shapes=[(64, 64)])
+            opencl_compare_with_numpy("max", shapes=[(64, 64)], axis=0)
+            opencl_compare_with_numpy("max", shapes=[(64, 64)], axis=1)
 
 
-
-    class OpenCLGradCheck(unittest.TestCase):
-
-        def unary_func(self, f, shape=(3,), l=-1, h=1, eps=1e-3, transpose=False):
-            t = np.random.uniform(l, h, size=shape).astype(np.float32)
-            t = device.Tensor.from_numpy(t if not transpose else t.T)
-            return assert_gradcheck(f, t, eps=eps)
-
-        def simple_binary_func(self, f, a_shape=(3, 3), b_shape=(3, 3), l=-1, h=1, eps=1e-3, transpose=False):
-            a = np.random.uniform(l, h, size=a_shape) if not transpose else np.random.uniform(l, h, size=a_shape).T
-            b = np.random.uniform(l, h, size=b_shape) if not transpose else np.random.uniform(l, h, size=b_shape).T
-            a = device.Tensor.from_numpy(a.astype(np.float32))
-            b = device.Tensor.from_numpy(b.astype(np.float32))
-            assert_gradcheck(lambda a: f(a, b), a, eps=eps)
-            assert_gradcheck(lambda b: f(a, b), b, eps=eps)
+    class Test_OpenCL_GradCheck(unittest.TestCase):
 
         """ transformations """
         def test_transpose(self):
-            self.unary_func(lambda t: t.transpose(0, 1), shape=(3, 2))
+            opencl_check_gradients(lambda x: OpenCLTensor.transpose(x, 1, 0), shapes=[(15, 15)])
         def test_reshape(self):
-            self.unary_func(lambda x: OpenCLTensor.reshape(x, -1))
+            opencl_check_gradients(lambda x: OpenCLTensor.reshape(x, -1), shapes=[(15, 15)])
 
         """ unary operators """
         def test_neg(self):
-            self.unary_func(OpenCLTensor.neg)
+            opencl_check_gradients("neg", shapes=[(15, 15)], broadcast=True, transpose=True)
         def test_sin(self):
-            self.unary_func(OpenCLTensor.sin)
+            opencl_check_gradients("sin", shapes=[(15, 15)], broadcast=True, transpose=True)
         def test_cos(self):
-            self.unary_func(OpenCLTensor.cos)
+            opencl_check_gradients("cos", shapes=[(15, 15)], broadcast=True, transpose=True)
         def test_exp(self):
-            self.unary_func(OpenCLTensor.exp)
+            opencl_check_gradients("exp", shapes=[(15, 15)], broadcast=True, transpose=True)
         def test_log(self):
-            self.unary_func(OpenCLTensor.log, l=0.1, h=10)
+            opencl_check_gradients("log", shapes=[(15, 15)], broadcast=True, transpose=True, lowhigh=(0.1, 10))
         def test_sigmoid(self):
-            self.unary_func(OpenCLTensor.sigmoid)
+            opencl_check_gradients("sigmoid", shapes=[(15, 15)], broadcast=True, transpose=True)
         def test_tanh(self):
-            self.unary_func(OpenCLTensor.tanh)
+            opencl_check_gradients("tanh", shapes=[(15, 15)], broadcast=True, transpose=True)
         def test_relu(self):
-            self.unary_func(OpenCLTensor.relu)
+            opencl_check_gradients("relu", shapes=[(15, 15)], broadcast=True, transpose=True, eps=1e-5, tol=0.002)
 
         """ Reductions/Selections """
             
         """ binary operators """
         def test_add(self):
-            self.simple_binary_func(OpenCLTensor.add, transpose=False)
-            self.simple_binary_func(OpenCLTensor.add, transpose=True)
+            opencl_check_gradients("add", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True)
         def test_sub(self):
-            self.simple_binary_func(OpenCLTensor.sub, transpose=False)
-            self.simple_binary_func(OpenCLTensor.sub, transpose=True)
+            opencl_check_gradients("sub", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True)
         def test_mul(self):
+            opencl_check_gradients("mul", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True)
             self.simple_binary_func(OpenCLTensor.mul, transpose=False)
             self.simple_binary_func(OpenCLTensor.mul, transpose=True)
         def test_div(self):
-            self.simple_binary_func(OpenCLTensor.div, l=0.1, h=10, transpose=False)    # check positive values
-            self.simple_binary_func(OpenCLTensor.div, l=-10, h=-0.1, transpose=False)  # also check for negatives
-            self.simple_binary_func(OpenCLTensor.div, l=0.1, h=10, transpose=True)    # check positive values
-            self.simple_binary_func(OpenCLTensor.div, l=-10, h=-0.1, transpose=True)  # also check for negatives
-        def test_dot(self):
-            self.simple_binary_func(OpenCLTensor.dot, a_shape=(3, 3), b_shape=(3, 3))
-            self.simple_binary_func(OpenCLTensor.dot, a_shape=(7, 4), b_shape=(5, 7), transpose=True)
+            opencl_check_gradients("div", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True, lowhigh=(0.1, 10))
+            opencl_check_gradients("div", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True, lowhigh=(-10, -0.1))
         def test_pow(self):
-            self.simple_binary_func(OpenCLTensor.pow, l=0, h=1, transpose=False, eps=1e-4)
-            self.simple_binary_func(OpenCLTensor.pow, l=0, h=1, transpose=True, eps=1e-4)
+            opencl_check_gradients("pow", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True, lowhigh=(0, 1), eps=1e-5, tol=0.01)
+        def test_dot(self):
+            opencl_check_gradients("dot", shapes=[(5, 5), (5, 5)], transpose=True)
+            opencl_check_gradients("dot", shapes=[(9, 4), (4, 14)])
             
         """ more complex operations """
         def test_linear_model(self):
@@ -216,7 +144,7 @@ if opencl_available:
                     y = self.l2(y)
                     return y
             model = Model().map_parameters(lambda p: p.opencl(device=device))
-            self.unary_func(model, shape=(4, 8))
+            opencl_check_gradients(model, shapes=[(16, 8)])
 
         def test_linear_model_compare_gradients(self):
             import lightgrad.nn as nn

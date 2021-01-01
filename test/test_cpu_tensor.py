@@ -1,69 +1,64 @@
 import unittest
-# import lightgrad
-from lightgrad.autograd import Tensor
-from lightgrad.autograd.utils.gradcheck import assert_gradcheck
+# import lightgrad and gradcheck
+from lightgrad.autograd import CpuTensor
 # set random seed
 import numpy as np
-np.random.seed(1337)
+np.random.seed(1234)
 
-class GradCheck(unittest.TestCase):
+# test helpers
+from .common import check_gradients
+cpu_check_gradients = lambda *args, **kwargs: check_gradients(CpuTensor, *args, **kwargs)
 
-    def unary_func(self, f, shape=(3,), l=-1, h=1, eps=1e-3):
-        t = Tensor.uniform(l, h, shape=shape)
-        assert_gradcheck(f, t, eps=eps)
-
-    def simple_binary_func(self, f, shape=(3, 3), l=-1, h=1, eps=1e-3):
-        a = Tensor.uniform(l, h, shape=shape)
-        b = Tensor.uniform(l, h, shape=shape)
-        assert_gradcheck(lambda a: f(a, b), a, eps=eps)
-        assert_gradcheck(lambda b: f(a, b), b, eps=eps)
+class Test_Cpu_GradCheck(unittest.TestCase):
 
     """ transformations """
     def test_transpose(self):
-        self.unary_func(Tensor.transpose, shape=(3, 2))
+        cpu_check_gradients(CpuTensor.transpose, shapes=[(45, 65)])
     def test_reshape(self):
-        self.unary_func(lambda x: Tensor.reshape(x, -1))
+        cpu_check_gradients(lambda x: CpuTensor.reshape(x, -1), shapes=[(45, 65)])
     def test_pad(self):
-        self.unary_func(lambda x: Tensor.pad(x, padding=2), shape=(3, 3))
+        cpu_check_gradients(lambda x: CpuTensor.pad(x, padding=2), shapes=[(45, 65)])
 
     """ unary operators """
     def test_neg(self):
-        self.unary_func(Tensor.neg)
+        cpu_check_gradients(CpuTensor.neg, shapes=[(10, 15)])
     def test_sin(self):
-        self.unary_func(Tensor.sin)
+        cpu_check_gradients(CpuTensor.sin, shapes=[(10, 15)])
     def test_cos(self):
-        self.unary_func(Tensor.cos)
+        cpu_check_gradients(CpuTensor.cos, shapes=[(10, 15)])
     def test_exp(self):
-        self.unary_func(Tensor.exp)
+        cpu_check_gradients(CpuTensor.exp, shapes=[(10, 15)])
     def test_log(self):
-        self.unary_func(Tensor.log, l=0.1, h=10)
+        cpu_check_gradients(CpuTensor.log, shapes=[(10, 15)], lowhigh=(0.1, 10))
     def test_sigmoid(self):
-        self.unary_func(Tensor.sigmoid)
+        cpu_check_gradients(CpuTensor.sigmoid, shapes=[(10, 15)])
     def test_tanh(self):
-        self.unary_func(Tensor.tanh)
+        cpu_check_gradients(CpuTensor.tanh, shapes=[(10, 15)])
     def test_relu(self):
-      self.unary_func(Tensor.relu)
+        cpu_check_gradients(CpuTensor.relu, shapes=[(10, 15)], eps=1e-5, tol=0.002)
 
     """ Reductions/Selections """
     def test_max(self):
-        self.unary_func(Tensor.max)
+        cpu_check_gradients(CpuTensor.max, shapes=[(10, 15)])
     def test_min(self):
-        self.unary_func(Tensor.min)
+        cpu_check_gradients(CpuTensor.min, shapes=[(10, 15)])
         
     """ binary operators """
     def test_add(self):
-        self.simple_binary_func(Tensor.add)
+        cpu_check_gradients(CpuTensor.add, shapes=[(10, 15), (10, 15)], broadcast=True)
     def test_sub(self):
-        self.simple_binary_func(Tensor.sub)
+        cpu_check_gradients(CpuTensor.sub, shapes=[(10, 15), (10, 15)], broadcast=True)
     def test_mul(self):
-        self.simple_binary_func(Tensor.mul)
+        cpu_check_gradients(CpuTensor.mul, shapes=[(10, 15), (10, 15)], broadcast=True)
     def test_div(self):
-        self.simple_binary_func(Tensor.div, l=0.1, h=10)    # check positive values
-        self.simple_binary_func(Tensor.div, l=-10, h=-0.1)  # also check for negatives
-    def test_dot(self):
-        self.simple_binary_func(Tensor.mul, shape=(3, 3))        
+        cpu_check_gradients(CpuTensor.div, shapes=[(10, 15), (10, 15)], broadcast=True, lowhigh=(0.1, 10), tol=5e-3)
+        cpu_check_gradients(CpuTensor.div, shapes=[(10, 15), (10, 15)], broadcast=True, lowhigh=(-10, -0.1), tol=5e-3)
     def test_pow(self):
-        self.simple_binary_func(Tensor.pow, l=0, h=1)
+        cpu_check_gradients(CpuTensor.pow, shapes=[(10, 15), (10, 15)], broadcast=True, lowhigh=(1, 2), eps=1e-5, tol=0.01)
+    def test_dot(self):
+        cpu_check_gradients(CpuTensor.dot, shapes=[(10, 15), (15, 10)])
+    def test_convolution(self):
+        cpu_check_gradients(CpuTensor.conv, shapes=[(3, 2, 5, 5), (4, 2, 3, 3)], strides=1)
         
     """ more complex operations """
     def test_linear_model(self):
@@ -77,13 +72,7 @@ class GradCheck(unittest.TestCase):
                 y = self.l1(x).tanh()
                 y = self.l2(y)
                 return y
-        self.unary_func(Model(), shape=(4, 8))
-
-    def test_convolution(self):
-        x = Tensor.uniform(-1, 1, shape=(3, 2, 5, 5))
-        w = Tensor.uniform(-1, 1, shape=(4, 2, 3, 3))
-        assert_gradcheck(lambda x: x.conv(w, strides=1), x)
-        assert_gradcheck(lambda w: x.conv(w, strides=1), w)
+        cpu_check_gradients(Model(), shapes=[(16, 8)])
 
 if __name__ == '__main__':
     unittest.main(verbose=2)

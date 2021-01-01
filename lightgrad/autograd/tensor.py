@@ -96,7 +96,6 @@ class AbstractTensor(metaclass=_TensorType):
 
     """ Gradients """
 
-    @Gradients.no_grad()
     def backward(self, allow_fill:bool =False) -> None:
         # no expression tree found
         if self.__ctx is None:

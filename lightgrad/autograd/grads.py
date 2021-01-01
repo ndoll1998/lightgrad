@@ -37,8 +37,9 @@ class Gradients(object):
         while len(nodes) > 0:
             # get current node and the corresponding output gradients
             ctx, out_grad = nodes.popitem()
-            # backpropagate and get parent contexts
-            ctx._backpropagate(out_grad)
+            # backpropagate and update parent tensor gradients
+            with Gradients.no_grad():
+                ctx._backpropagate(out_grad)
             # update nodes
             new_nodes = {t.ctx: t.grad for t in ctx.parent_tensors if t.requires_grad and (t.ctx is not None)}
             nodes.update(new_nodes)

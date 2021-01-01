@@ -7,12 +7,10 @@ from math import ceil
 
 def _bi_reverse(f):
     """ reverse inputs of bi-operator """
-    class F(f):
-        def forward(ctx, a, b):
-            return f.forward(ctx, b, a)
-        def backward(ctx, out_grad):
-            return reversed(f.backward(out_grad))
-    return F
+    return type(f.__name__, (f,), {
+        'forward': lambda ctx, a, b: f.forward(ctx, b, a),
+        'backward': lambda ctx, out_grad: reversed(f.backward(out_grad))
+    })
 
 def _use_tensor_data(fn):
     class Fn(fn):
@@ -253,15 +251,6 @@ class relu(Function):
         return out_grad * (t >= 0)
         # return (1 + t.exp()).log() * out_grad
 
-@CpuTensor.register_op()
-@_use_tensor_data
-class softmax(Function):
-    def forward(ctx, t, axis:int =-1):
-        exps = np.exp(t - np.max(t, axis=axis, keepdims=True))
-        return exps / np.sum(exps, axis=axis, keepdims=True)
-    # TODO: backward
-
-
 """ Selectors """
 
 @CpuTensor.register_op("__getitem__")
@@ -293,24 +282,30 @@ class __setitem(Function):
 @CpuTensor.register_op()
 @_use_tensor_data
 class max(Function):
-    def forward(ctx, x, *args, **kwargs):
-        val = np.max(x, *args, **kwargs)
-        ctx.save_for_backward(x == val)
-        return val
+    def forward(ctx, x, axis=None, keepdims=False):
+        axis = tuple(range(len(x.shape))) if axis is None else axis
+        val = np.max(x, axis=axis, keepdims=True)
+        ctx.save_for_backward(x, val, axis, keepdims)
+        return val if keepdims else np.squeeze(val, axis=axis)
     def backward(ctx, out_grad):
-        mask, = ctx.get_saved_tensors()
-        return out_grad * mask
+        x, val, axis, keepdims = ctx.get_saved_tensors()
+        if not keepdims:
+            out_grad = np.expand_dims(out_grad, axis=axis)
+        return out_grad * (x == val)
 
 @CpuTensor.register_op()
 @_use_tensor_data
 class min(Function):
-    def forward(ctx, x, *args, **kwargs):
-        val = np.min(x, *args, **kwargs)
-        ctx.save_for_backward(x == val)
-        return val
+    def forward(ctx, x, axis=None, keepdims=False):
+        axis = tuple(range(len(x.shape))) if axis is None else axis
+        val = np.min(x, axis=axis, keepdims=True)
+        ctx.save_for_backward(x, val, axis, keepdims)
+        return val if keepdims else np.squeeze(val, axis=axis)
     def backward(ctx, out_grad):
-        mask, = ctx.get_saved_tensors()
-        return out_grad * mask
+        x, val, axis, keepdims = ctx.get_saved_tensors()
+        if not keepdims:
+            out_grad = np.expand_dims(out_grad, axis=axis)
+        return out_grad * (x == val)
 
 @CpuTensor.register_op()
 @_use_tensor_data
@@ -319,9 +314,9 @@ class mean(Function):
         return t.mean(*args, **kwargs)
     # TODO: backward
 
-@CpuTensor.register_op("sum")
+@CpuTensor.register_op()
 @_use_tensor_data
-class _sum(Function):
+class sum(Function):
     def forward(ctx, t, *args, **kwargs):
         return t.sum(*args, **kwargs)
     # TODO: backward
@@ -388,53 +383,3 @@ class conv(Function):
             x_grad_windows[idx] += out_x_grad_windows[idx]
         # return
         return x_grad, w_grad
-
-@CpuTensor.register_op()
-@_use_tensor_data
-class max_pool(Function):
-    def forward(ctx, a, kernelsize:tuple=(2, 2)):
-        n, m = len(kernelsize), len(a.shape)
-        # cut input to match stride
-        in_shape = a.shape
-        cut_shape = a.shape[:-n] + tuple((d//s) * s for d, s in zip(a.shape[-n:], kernelsize))
-        a = a[tuple(slice(d) for d in cut_shape)]
-        # split up pooling dimensions
-        pooled_shape = sum(tuple((s//ks, ks) for s, ks in zip(a.shape[-n:], kernelsize)), tuple())
-        p = a.reshape(a.shape[:-n] + pooled_shape)
-        # permute dimensions to create windows
-        permut_idx = tuple(range(m-n+1,m+n,2)) + tuple(range(m-n)) + tuple(range(m-n,m+n,2))
-        p = p.transpose(*permut_idx)
-        # flatten pooling windows
-        flat_shape = (np.prod(kernelsize),) + a.shape[:-n] + tuple((s//ks for s, ks in zip(a.shape[-n:], kernelsize)))
-        p = p.reshape(*flat_shape)
-        # max pool and create mask for backward
-        y = p.max(axis=0)
-        ctx.save_for_backward(p == y, kernelsize, in_shape, cut_shape)
-        # return tensor
-        return y
-    def backward(ctx, out_grad):
-        mask, kernelsize, in_shape, cut_shape = ctx.get_saved_tensors()
-        n, m = len(kernelsize), len(cut_shape)
-        # build pooling gradient
-        g = mask * np.expand_dims(out_grad, 0).repeat(np.prod(kernelsize), axis=0)
-        # backward pooling windows
-        g = g.reshape(*kernelsize, *g.shape[1:])
-        permut_idx = tuple(range(m-n,m)) + sum(((m+i, i) for i in range(n)), tuple())
-        g = g.transpose(*permut_idx).reshape(*cut_shape)
-        # pad to match input shape
-        return np.pad(g, [(0, s-c) for s, c in zip(in_shape, cut_shape)])
-
-@CpuTensor.register_op()
-@_use_tensor_data
-class pad(Function):
-    def forward(ctx, t, padding:int, dims:tuple =(-2, -1), value:float =0.0):
-        ctx.save_for_backward(padding, dims)
-        pad_width = np.zeros((len(t.shape), 2), dtype=np.int32)
-        pad_width[dims, :] = padding
-        return np.pad(t, pad_width=pad_width.tolist(), constant_values=value)
-    def backward(ctx, out_grad):
-        p, dims = ctx.get_saved_tensors()
-        idx = list(slice(d) for d in out_grad.shape)
-        for i in dims:
-            idx[i] = slice(p, out_grad.shape[i] - p)
-        return out_grad[tuple(idx)]

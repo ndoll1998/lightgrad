@@ -313,12 +313,6 @@ class relu(Function):
             op='o = (t>=0)? g : 0'
         )[0]
 
-@OpenCLTensor.register_op()
-class softmax(Function):
-    def forward(ctx, t, axis:int =-1):
-        exps = (t - t.max(axis=axis, keepdims=True)).exp()
-        return exps / exps.sum(axis=axis, keepdims=True)
-
 """ Selectors """
 
 def _idx_view(a, idx):
@@ -365,8 +359,8 @@ class __setitem(Function):
 
 """ Reductions """
 
-@OpenCLTensor.register_op("sum")
-class _sum(Function):
+@OpenCLTensor.register_op()
+class sum(Function):
     def forward(ctx, t, axis:int =None, keepdims:bool =False):
         return kernels.reduction('a + b', t, axis=axis, keepdims=keepdims, neutral='0')
 

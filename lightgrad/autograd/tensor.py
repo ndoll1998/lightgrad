@@ -1,7 +1,6 @@
 import numpy as np
 from .grads import Gradients
-from functools import reduce, lru_cache
-from collections import OrderedDict
+from functools import reduce
 
 class _TensorType(type):
 
@@ -26,7 +25,7 @@ class AbstractTensor(metaclass=_TensorType):
         self.__ctx:Function = None
 
     def _set_ctx(self, ctx:"Function") -> "AbstractTensor":
-        assert isinstance(ctx, Function)
+        assert isinstance(ctx, Function) or (ctx is None)
         self.__ctx = ctx
         return self
     def _set_data(self, data) -> "AbstractTensor":
@@ -37,6 +36,10 @@ class AbstractTensor(metaclass=_TensorType):
         # TODO: create a copy of the tensor
         self.__ctx = None
         return self
+
+    @property
+    def ctx(self) -> "Function":
+        return self.__ctx
 
     @property
     def data(self):
@@ -59,6 +62,9 @@ class AbstractTensor(metaclass=_TensorType):
         return self.numpy().item()
     def numel(self) -> int:
         return int(reduce(lambda a, b: a * b, self.shape)) if len(self.shape) > 0 else 1
+
+
+    """ Initializers """
 
     @staticmethod
     def empty(shape, requires_grad:bool =True) -> "AbstractTensor":
@@ -87,6 +93,9 @@ class AbstractTensor(metaclass=_TensorType):
     def numpy(self) -> np.ndarray:
         raise NotImplementedError()
 
+
+    """ Gradients """
+
     @Gradients.no_grad()
     def backward(self, allow_fill:bool =False) -> None:
         # no expression tree found
@@ -97,19 +106,8 @@ class AbstractTensor(metaclass=_TensorType):
             self.__grad = self.__class__.ones(self.shape, requires_grad=False)
         else:
             raise RuntimeError("Can only backpropagate from item tensors!")
-
-        # nodes map contexts to their output gradient
-        nodes = OrderedDict({self.__ctx: self.grad,})
-        # breadth-first backpropagation
-        while len(nodes) > 0:
-            # get current node and the corresponding output gradients
-            ctx, out_grad = nodes.popitem()
-            # backpropagate and get parent contexts
-            ctx._backpropagate(out_grad)
-            in_tensors = tuple(t for t in ctx.parent_tensors if t.__ctx)
-            # update nodes
-            new_nodes = {t.__ctx: t.grad for t in ctx.parent_tensors if t.__ctx is not None}
-            nodes.update(new_nodes)
+        # backpropagate
+        Gradients.backward(self.ctx, self.grad)
 
     @Gradients.no_grad()
     def add_grad(self, grad:"AbstractTensor") -> None:
@@ -132,6 +130,9 @@ class AbstractTensor(metaclass=_TensorType):
             assert self not in self.__ctx.parent_tensors
             for t in self.__ctx.parent_tensors:
                 t.zero_grad(graph_traverse=True)
+
+
+    """ Registration of operations and backends """
 
     @classmethod
     def register_op(cls, name:str =None, op:type =None):
@@ -159,3 +160,5 @@ class AbstractTensor(metaclass=_TensorType):
 
 # imports at bottom to avoid circular import errors
 from .func import Function
+# register non-first class ops
+from . import ops

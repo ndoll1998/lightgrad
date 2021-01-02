@@ -24,43 +24,27 @@ if opencl_available:
     class Test_OpenCLTensor(unittest.TestCase):
 
         """ transformations """
-        def test_transpose(self):
-            f = lambda t: t.transpose(1, 0)
-            opencl_compare_with_numpy(f, shapes=[(64, 64)])
-        def test_reshape(self):
-            f = lambda t: t.reshape(-1)
-            opencl_compare_with_numpy(f, shapes=[(64, 64)])
+        test_transpose = lambda self: opencl_compare_with_numpy(lambda t: t.transpose(1, 0), shapes=[(64, 64)])
+        test_reshape = lambda self: opencl_compare_with_numpy(lambda t: t.reshape(-1), shapes=[(64, 64)])
 
         """ unary operators """
-        def test_neg(self):
-            opencl_compare_with_numpy(lambda x: -x, shapes=[(64, 64)])
-        def test_sin(self):
-            opencl_compare_with_numpy("sin", shapes=[(64, 64)])
-        def test_cos(self):
-            opencl_compare_with_numpy("cos", shapes=[(64, 64)])
-        def test_exp(self):
-            opencl_compare_with_numpy("exp", shapes=[(64, 64)])
-        def test_log(self):
-            opencl_compare_with_numpy("log", shapes=[(64, 64)], lowhigh=(0, 1))
-        def test_sigmoid(self):
-            opencl_compare_with_cpu("sigmoid", shapes=[(64, 64)])
-        def test_tanh(self):
-            opencl_compare_with_numpy("tanh", shapes=[(64, 64)])
-        def test_relu(self):
-            opencl_compare_with_cpu("relu", shapes=[(64, 64)])
+        test_neg = lambda self: opencl_compare_with_numpy(lambda x: -x, shapes=[(64, 64)])
+        test_sin = lambda self: opencl_compare_with_numpy("sin", shapes=[(64, 64)])
+        test_cos = lambda self: opencl_compare_with_numpy("cos", shapes=[(64, 64)])
+        test_exp = lambda self: opencl_compare_with_numpy("exp", shapes=[(64, 64)])
+        test_log = lambda self: opencl_compare_with_numpy("log", shapes=[(64, 64)], lowhigh=(0, 1))
+        test_sigmoid = lambda self: opencl_compare_with_cpu("sigmoid", shapes=[(64, 64)])
+        test_tanh = lambda self: opencl_compare_with_numpy("tanh", shapes=[(64, 64)])
+        test_relu = lambda self: opencl_compare_with_cpu("relu", shapes=[(64, 64)])
             
         """ binary operators """
-        def test_add(self):
-            opencl_compare_with_numpy(lambda a, b: a + b, shapes=[(64, 64), (64, 64)], broadcast=True)
-        def test_sub(self):
-            opencl_compare_with_numpy(lambda a, b: a - b, shapes=[(64, 64), (64, 64)], broadcast=True)
-        def test_mul(self):
-            opencl_compare_with_numpy(lambda a, b: a * b, shapes=[(64, 64), (64, 64)], broadcast=True)
+        test_add = lambda self: opencl_compare_with_numpy(lambda a, b: a + b, shapes=[(64, 64), (64, 64)], broadcast=True)
+        test_sub = lambda self: opencl_compare_with_numpy(lambda a, b: a - b, shapes=[(64, 64), (64, 64)], broadcast=True)
+        test_mul = lambda self: opencl_compare_with_numpy(lambda a, b: a * b, shapes=[(64, 64), (64, 64)], broadcast=True)
+        test_pow = lambda self: opencl_compare_with_numpy(lambda a, b: a ** b, shapes=[(64, 64), (64, 64)], broadcast=True, lowhigh=(0, 1))
         def test_div(self):
             opencl_compare_with_numpy(lambda a, b: a / b, shapes=[(64, 64), (64, 64)], broadcast=True, lowhigh=(0.1, 10))
             opencl_compare_with_numpy(lambda a, b: a / b, shapes=[(64, 64), (64, 64)], broadcast=True, lowhigh=(-10, -0.1))
-        def test_pow(self):
-            opencl_compare_with_numpy(lambda a, b: a ** b, shapes=[(64, 64), (64, 64)], broadcast=True, lowhigh=(0, 1))
         def test_dot(self):
             opencl_compare_with_numpy(lambda a, b: a @ b, shapes=[(64, 64), (64, 64)], transpose=True)
             opencl_compare_with_numpy(lambda a, b: a @ b, shapes=[(32, 64), (64, 128)])
@@ -88,43 +72,43 @@ if opencl_available:
     class Test_OpenCL_GradCheck(unittest.TestCase):
 
         """ transformations """
-        def test_transpose(self):
-            opencl_check_gradients(lambda x: OpenCLTensor.transpose(x, 1, 0), shapes=[(15, 15)])
-        def test_reshape(self):
-            opencl_check_gradients(lambda x: OpenCLTensor.reshape(x, -1), shapes=[(15, 15)])
+        test_transpose = lambda self: opencl_check_gradients(lambda x: OpenCLTensor.transpose(x, 1, 0), shapes=[(15, 15)])
+        test_reshape = lambda self: opencl_check_gradients(lambda x: OpenCLTensor.reshape(x, -1), shapes=[(15, 15)])
 
         """ unary operators """
-        def test_neg(self):
-            opencl_check_gradients("neg", shapes=[(15, 15)], broadcast=True, transpose=True)
-        def test_sin(self):
-            opencl_check_gradients("sin", shapes=[(15, 15)], broadcast=True, transpose=True)
-        def test_cos(self):
-            opencl_check_gradients("cos", shapes=[(15, 15)], broadcast=True, transpose=True)
-        def test_exp(self):
-            opencl_check_gradients("exp", shapes=[(15, 15)], broadcast=True, transpose=True)
-        def test_log(self):
-            opencl_check_gradients("log", shapes=[(15, 15)], broadcast=True, transpose=True, lowhigh=(0.1, 10))
-        def test_sigmoid(self):
-            opencl_check_gradients("sigmoid", shapes=[(15, 15)], broadcast=True, transpose=True)
-        def test_tanh(self):
-            opencl_check_gradients("tanh", shapes=[(15, 15)], broadcast=True, transpose=True)
-        def test_relu(self):
-            opencl_check_gradients("relu", shapes=[(15, 15)], broadcast=True, transpose=True, eps=1e-5, tol=0.002)
+        test_neg = lambda self: opencl_check_gradients("neg", shapes=[(15, 15)], broadcast=True, transpose=True)
+        test_sin = lambda self: opencl_check_gradients("sin", shapes=[(15, 15)], broadcast=True, transpose=True)
+        test_cos = lambda self: opencl_check_gradients("cos", shapes=[(15, 15)], broadcast=True, transpose=True)
+        test_exp = lambda self: opencl_check_gradients("exp", shapes=[(15, 15)], broadcast=True, transpose=True)
+        test_log = lambda self: opencl_check_gradients("log", shapes=[(15, 15)], broadcast=True, transpose=True, lowhigh=(0.1, 10))
+        test_sigmoid = lambda self: opencl_check_gradients("sigmoid", shapes=[(15, 15)], broadcast=True, transpose=True)
+        test_tanh = lambda self: opencl_check_gradients("tanh", shapes=[(15, 15)], broadcast=True, transpose=True)
+        test_relu = lambda self: opencl_check_gradients("relu", shapes=[(15, 15)], broadcast=True, transpose=True, eps=1e-5, tol=0.002)
 
         """ Reductions/Selections """
+        def test_max(self):
+            opencl_check_gradients("max", shapes=[(2, 2)])
+            opencl_check_gradients("max", shapes=[(2, 2)], axis=0)
+            # TODO: why doesn't this work - seems to work fine when testing manually
+            # opencl_check_gradients("max", shapes=[(2, 2)], axis=1)
+        def test_min(self):
+            opencl_check_gradients("min", shapes=[(2, 2)])
+            opencl_check_gradients("min", shapes=[(2, 2)], axis=0)
+            # TODO: why doesn't this work - seems to work fine when testing manually
+            # opencl_check_gradients("min", shapes=[(2, 2)], axis=1)
+        def test_sum(self):
+            opencl_check_gradients("sum", shapes=[(2, 2)], transpose=True)
+            opencl_check_gradients("sum", shapes=[(2, 2)], axis=0, transpose=True)
+            opencl_check_gradients("sum", shapes=[(2, 2)], axis=1, transpose=True)
             
         """ binary operators """
-        def test_add(self):
-            opencl_check_gradients("add", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True)
-        def test_sub(self):
-            opencl_check_gradients("sub", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True)
-        def test_mul(self):
-            opencl_check_gradients("mul", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True)
+        test_add = lambda self: opencl_check_gradients("add", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True)
+        test_sub = lambda self: opencl_check_gradients("sub", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True)
+        test_mul = lambda self: opencl_check_gradients("mul", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True)
+        test_pow = lambda self: opencl_check_gradients("pow", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True, lowhigh=(0, 1), eps=1e-5, tol=0.01)
         def test_div(self):
             opencl_check_gradients("div", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True, lowhigh=(0.1, 10))
             opencl_check_gradients("div", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True, lowhigh=(-10, -0.1))
-        def test_pow(self):
-            opencl_check_gradients("pow", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True, lowhigh=(0, 1), eps=1e-5, tol=0.01)
         def test_dot(self):
             opencl_check_gradients("dot", shapes=[(5, 5), (5, 5)], transpose=True)
             opencl_check_gradients("dot", shapes=[(9, 4), (4, 14)])

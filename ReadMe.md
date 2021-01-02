@@ -56,7 +56,7 @@ for epoch in range(100):
 ```
 
 ### Modules
-Modules yield an easy way of managing parameters and combining them with their functionality. Additionally they provides furhter features for easy parameter manipulation (loading, mapping, etc.). We can simplify out example using the `Module` class as follows:
+Modules yield an easy way of managing parameters and combining them with their functionality. Additionally they provides furhter features for easy parameter manipulation (loading, mapping, etc.). We can simplify our example using the `Module` class as follows:
 
 ```python
 import lightgrad as light

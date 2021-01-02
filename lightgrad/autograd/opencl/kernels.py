@@ -10,7 +10,7 @@ from pyopencl.tools import dtype_to_ctype
 from numpy import uint32 as i32
 from math import ceil, log2
 # typing
-from typing import Tuple, Union
+from typing import Tuple
 
 __all__ = ['atom', 'dot', 'reduction']
 
@@ -435,37 +435,33 @@ def reduction(
     # input tensor
     T:OpenCLTensor,
     # options
-    axis:Union[Tuple[int], int, None] =None,
-    keepdims:bool =False,
+    axis:Tuple[int],
     neutral:str ="0",
     # kernel information
     group_size:int =128
 ) -> OpenCLTensor:
     # get device
     device = T.device
-    # prepare reduction axes
-    axes = tuple(range(len(T.shape))) if axis is None else (axis,) if not isinstance(axis, tuple) else axis
-    axes = tuple(i if i >= 0 else (len(T.shape) + i) for i in axes)
     # total number of elements to reduce
-    reduce_numel = reduce(lambda x, y: x * y, (T.shape[i] for i in axes))
-    keep_numel = reduce(lambda x, y: x * y, (T.shape[i] for i in range(len(T.shape)) if i not in axes), 1)
+    reduce_numel = reduce(lambda x, y: x * y, (T.shape[i] for i in axis))
+    keep_numel = reduce(lambda x, y: x * y, (T.shape[i] for i in range(len(T.shape)) if i not in axis), 1)
     n_work_groups = ceil(reduce_numel / (group_size * 2))  # number of work-groups needed
 
     # build output tensor
-    shape = tuple(s if i not in axes else 1 for i, s in enumerate(T.shape) if (i not in axes) or keepdims)
+    shape = tuple(s if i not in axis else 1 for i, s in enumerate(T.shape))
     shape = (1,) if len(shape) == 0 else shape
     # output tensor also stores partial sums of each iterations, thus n_work_groups
     O = device.Tensor.empty(shape + (n_work_groups,), dtype=T.dtype)
 
     # transpose to have reduction dimensions at last
-    if len(axes) < len(T.shape):
+    if len(axis) < len(T.shape):
         perm = list(range(len(T.shape)))
-        for i, j in enumerate(axes, 1):
+        for i, j in enumerate(axis, 1):
             perm[-i], perm[j] = perm[j], perm[-i]
         T = T.transpose(*perm)
 
     # build kernels
-    use_strides = (len(axes) < len(T.shape) and not T.is_contiguous())
+    use_strides = (len(axis) < len(T.shape) and not T.is_contiguous())
     knl = cache_build_reduction_kernel(device.context, 
         reduction=reduction, 
         dtype=T.dtype, 

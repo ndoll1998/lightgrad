@@ -36,7 +36,7 @@ class OpenCLTensor(AbstractTensor, metaclass=__OpenCLTensorType):
         self.__strides = strides if len(strides) > 0 else _contiguous_strides(shape)
         self.__offset = offset
         # check if shape matches buffer
-        assert self.numel() <= (buffer.size // self.__dtype.itemsize) - offset, "Buffer is too small for given shape and offset! "
+        # assert self.numel() <= (buffer.size // self.__dtype.itemsize) - offset, "Buffer is too small for given shape and offset! "
         assert len(self.shape) == len(self.strides), "Shapes and strides do not align! (%s <-> %s)" % (self.shape, self.strides)
 
     @property

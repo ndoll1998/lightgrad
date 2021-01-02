@@ -287,13 +287,6 @@ class min(Function):
 
 @CpuTensor.register_op()
 @_use_tensor_data
-class mean(Function):
-    def forward(ctx, t, *args, **kwargs):
-        return t.mean(*args, **kwargs)
-    # TODO: backward
-
-@CpuTensor.register_op()
-@_use_tensor_data
 class sum(Function):
     def forward(ctx, t, *args, **kwargs):
         return t.sum(*args, **kwargs)

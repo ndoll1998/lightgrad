@@ -333,28 +333,68 @@ class setitem(Function):
 
 """ Reductions """
 
+def _prepare_axis(t, axis):
+    axis = tuple(range(len(t.shape))) if axis is None else (axis,) if not isinstance(axis, tuple) else axis
+    axis = tuple(i if i >= 0 else (len(t.shape) + i) for i in axis)
+    return axis
+def _squeeze(t, axis):
+    assert all(t.shape[i] == 1 for i in axis)
+    return t.reshape(*(s for i, s in enumerate(t.shape) if i not in axis))
+
 @OpenCLTensor.register_op()
 class sum(Function):
-    def forward(ctx, t, axis:int =None, keepdims:bool =False):
-        return kernels.reduction('a + b', t, axis=axis, keepdims=keepdims, neutral='0')
+    def forward(ctx, x, axis:int =None, keepdims:bool =False):
+        # prepare axis and apply reduction
+        axis = _prepare_axis(x, axis)
+        y = kernels.reduction('a + b', x, axis=axis, neutral='0')
+        # save and squeeze if neccessary
+        ctx.save_for_backward(x.shape, keepdims, axis)
+        return y if keepdims else _squeeze(y, axis)
+    def backward(ctx, out_grad):
+        shape, keepdims, axis = ctx.get_saved_tensors()
+        strides = out_grad.strides
+        # unsqueeze
+        if not keepdims:
+            # build unsqueezed strides
+            unsqueezed_strides, i = [], 0
+            for j in range(len(shape)):
+                unsqueeze_axis = (j in axis)
+                unsqueezed_strides.append(0 if unsqueeze_axis else strides[i])
+                i += 1 - int(unsqueeze_axis)
+        else:
+            # build unsqueezed strides but easier
+            unsqueezed_strides = tuple(0 if i in axis else st for i, st in enumerate(strides))
+        # create unsqueezed view on tensor
+        return OpenCLTensor(out_grad.data, shape=shape, strides=unsqueezed_strides, dtype=out_grad.dtype)
 
-@OpenCLTensor.register_op("mean")
-class mean(Function):
-    def forward(ctx, t, axis:int =None, keepdims:bool =False):
-        # compute sum
-        sum_out = t.sum(axis=axis, keepdims=keepdims)
-        # divide inplace to avoid allocation of new memory
-        axis = tuple(range(len(t.shape))) if axis is None else (axis,) if not isinstance(axis, tuple) else axis
-        sum_out /= np.prod([t.shape[i] for i in axis])
-        return sum_out
-        
 @OpenCLTensor.register_op()
 class max(Function):
-    def forward(ctx, t, axis:int =None, keepdims:bool =False):
-        return kernels.reduction('max(a, b)', t, axis=axis, keepdims=keepdims, neutral="-INFINITY")
-        
+    def forward(ctx, x, axis:int =None, keepdims:bool =False):
+        # prepare axis and apply reduction
+        axis = _prepare_axis(x, axis)
+        y = kernels.reduction('max(a, b)', x, axis=axis, neutral="-INFINITY")
+        # save and squeeze if neccessary
+        ctx.save_for_backward(x, y)
+        return y if keepdims else _squeeze(y, axis=axis)
+    def backward(ctx, out_grad):
+        x, y = ctx.get_saved_tensors()
+        return kernels.atom(
+            x=x, y=y, g=out_grad, output='o',
+            op="o = (x == y)? g : 0;"
+        )[0]
+
 @OpenCLTensor.register_op()
 class min(Function):
-    def forward(ctx, t, axis:int =None, keepdims:bool =False):
-        return kernels.reduction('min(a, b)', t, axis=axis, keepdims=keepdims, neutral="INFINITY")
-        
+    def forward(ctx, x, axis:int =None, keepdims:bool =False):
+        # prepare axis and apply reduction
+        axis = _prepare_axis(x, axis)
+        y = kernels.reduction('min(a, b)', x, axis=axis, neutral="INFINITY")
+        # save and squeeze if neccessary
+        ctx.save_for_backward(x, y)
+        return y if keepdims else _squeeze(y, axis=axis)
+    def backward(ctx, out_grad):
+        x, y = ctx.get_saved_tensors()
+        return kernels.atom(
+            x=x, y=y, g=out_grad, output='o',
+            op="o = (x == y)? g : 0;"
+        )[0]

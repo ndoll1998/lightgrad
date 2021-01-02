@@ -66,6 +66,14 @@ def softmax(t, axis:int =-1):
     return exps / exps.sum(axis=axis, keepdims=True)
 
 
+""" Reductions """
+
+@AbstractTensor.register_op()
+@WrapperFunction.from_function
+def mean(t, axis:int =None, keepdims:bool =False):
+    s = t.sum(axis=axis, keepdims=keepdims)
+    return s * (s.numel() / t.numel())
+
 """ Pooling """
 
 @AbstractTensor.register_op()

@@ -3,7 +3,7 @@ import numpy as np
 import pyopencl as cl
 from .tensor import OpenCLTensor
 # tools
-from functools import lru_cache, reduce
+from functools import lru_cache, reduce as reduce_
 from itertools import zip_longest, chain
 # utils
 from pyopencl.tools import dtype_to_ctype
@@ -12,7 +12,10 @@ from math import ceil, log2
 # typing
 from typing import Tuple
 
-__all__ = ['atom', 'dot', 'reduction']
+__all__ = ['atom', 'dot', 'reduce', 'conv']
+
+prod = lambda arr: reduce_(lambda x, y: x * y, arr, 1)
+nl = lambda i=0: ('\n' + ' ' * i)
 
 #
 #   Elementwise Kernel
@@ -56,7 +59,6 @@ def cache_build_atom_kernel(context:cl.Context,
     write_values = tuple(n.lower() for n in write)
     write_buffers = tuple(n.upper() for n in write)
     # create kernel source
-    nl = lambda i=0: ('\n' + ' ' * i)
     source = f"""
         __kernel void atom(
             // buffers
@@ -148,7 +150,7 @@ def atom(op:str,
     # broadcast shape
     shape = map(max, zip_longest(*map(reversed, shapes), fillvalue=1))
     shape = tuple(map(i32, shape))[::-1]
-    ndim, numel = len(shape), reduce(lambda x, y: x * y, shape, 1)
+    ndim, numel = len(shape), prod(shape)
 
     # create output tensors if necessary
     for out in output:
@@ -344,7 +346,7 @@ def cache_build_reduction_kernel(context,
     reduction:str,          # reduction operation
     # data information
     dtype:str,              # data type
-    neutral:str,            # neural element of reduction
+    neutral:str,            # neutral element of reduction
     ndim:int,               # dimension of input tensor
     use_strides:bool,       # use strided indices
     # kernel information
@@ -353,8 +355,6 @@ def cache_build_reduction_kernel(context,
     ctype = dtype_to_ctype(dtype)
     # there seems to be some weird difference in the ussage of barriers between CPUs and GPUs
     is_gpu = (context.devices[0].get_info(cl.device_info.TYPE) == cl.device_type.GPU)
-    # additional arguments list
-    nl = lambda i: '\n' + ' ' * i
     # helper source
     get_idx = lambda idx, i: f"""uint {idx} = 0;
             {{
@@ -430,7 +430,7 @@ def cache_build_reduction_kernel(context,
     # print(source)
     return cl.Program(context, source).build().reduce
 
-def reduction(
+def reduce(
     reduction:str,  # reduction expression using variables 'a' and 'b'
     # input tensor
     T:OpenCLTensor,
@@ -443,8 +443,8 @@ def reduction(
     # get device
     device = T.device
     # total number of elements to reduce
-    reduce_numel = reduce(lambda x, y: x * y, (T.shape[i] for i in axis))
-    keep_numel = reduce(lambda x, y: x * y, (T.shape[i] for i in range(len(T.shape)) if i not in axis), 1)
+    reduce_numel = prod((T.shape[i] for i in axis))
+    keep_numel = prod((T.shape[i] for i in range(len(T.shape)) if i not in axis))
     n_work_groups = ceil(reduce_numel / (group_size * 2))  # number of work-groups needed
 
     # build output tensor
@@ -499,3 +499,127 @@ def reduction(
     e.wait()
     # remove partial sums stored in last dimension of output
     return device.Tensor(O.data, shape=shape, dtype=O.dtype)
+
+
+# 
+# Convolution Kernel
+#
+# TODO: load input data into local memory
+# See: https://www.evl.uic.edu/kreda/gpu/image-convolution/
+
+@lru_cache
+def cache_build_conv_kernel(context,
+    kernel_dim:int,
+    dtype:type
+) -> cl.Kernel:
+    ctype = dtype_to_ctype(dtype)
+
+    source = f"""
+        __kernel void conv(
+            // input, kernel and output data
+            __global const {ctype}* X_data,
+            __constant {ctype}* knl_data,
+            __global {ctype}* Y_data,
+            // in- and output shape
+            const uint in_channels, const uint flat_in_image_size,
+            {', '.join(["const uint X_size_%i" % i for i in range(kernel_dim)])},
+            {', '.join(["const uint Y_size_%i" % i for i in range(kernel_dim)])},
+            // kernel shape
+            const uint flat_knl_size,
+            {', '.join(["const uint knl_size_%i" % i for i in range(kernel_dim)])},
+            // strides
+            {', '.join(["const uint stride_%i" % i for i in range(kernel_dim)])}
+        ) {{
+            // gather work-item information
+            const uint gi = get_global_id(0); // batch
+            const uint gj = get_global_id(1); // out-channel
+            const uint gk = get_global_id(2); // flat-out-channel
+            // dimensions
+            const uint out_channels = get_global_size(1);
+            const uint flat_out_image_size = get_global_size(2);
+            // batch offset
+            const uint X_batch_off = flat_in_image_size * in_channels * gi;
+            const uint Y_batch_off = flat_out_image_size * out_channels * gi;
+
+            // compute position in input image
+            uint pos[{kernel_dim}]; uint j = gk;
+            {nl(12).join([
+                ("pos[%i] = j %% Y_size_%i;" % (d, d)) +
+                ((nl(12) + "j /= Y_size_%i;" % d) if d != 0 else "")
+                for d in range(kernel_dim-1, -1, -1)
+            ])}
+
+            // apply convolution
+            {ctype} val = 0;
+            // in channels
+            for (uint in_c = 0; in_c < in_channels; ++in_c) {{
+                // channel offsets
+                const uint X_channel_off = X_batch_off + in_c * flat_in_image_size;
+                const uint knl_channel_off = (gj * in_channels + in_c) * flat_knl_size;
+                // kernel loop
+                {nl(16).join(["for (uint i_%i=0; i_%i < knl_size_%i; ++i_%i)" % (i, i, i, i) for i in range(kernel_dim)])} {{
+                    // compute image index
+                    uint X_idx = 0, X_stride = 1;
+                    {nl(20).join([
+                        "X_idx += (pos[%i] * stride_%i + i_%i) * X_stride; X_stride *= X_size_%i;" % (d, d, d, d)
+                        for d in range(kernel_dim-1, -1, -1)
+                    ])}
+                    // compute flat kernel index
+                    uint knl_idx = 0, knl_stride = 1;
+                    {nl(20).join([
+                        "knl_idx += i_%i * knl_stride; knl_stride *= knl_size_%i;" % (d, d)
+                        for d in range(kernel_dim-1, -1, -1)
+                    ])}
+                    // compute
+                    val += knl_data[knl_idx + knl_channel_off] * X_data[X_idx + X_channel_off];
+                }}
+            }}
+            const uint idx = Y_batch_off + gj * flat_out_image_size + gk;
+            Y_data[idx] = val;
+        }}
+    """
+    return cl.Program(context, source).build().conv
+
+def conv(
+    # input and kernel tensors
+    x:OpenCLTensor,
+    kernel:OpenCLTensor,
+    # strides
+    strides:tuple
+) -> OpenCLTensor:
+    # get device
+    device = x.device
+    # get dimensions
+    ndim = len(x.shape) 
+    kernel_dim = len(kernel.shape) - 2 # without in- and output channels
+    # TODO: flatten additional dimensions in input
+    assert ndim == kernel_dim + 2
+    assert len(strides) == kernel_dim
+    # build output tensor
+    out_image_shape = tuple((s - k) // st + 1 for s, k, st in zip(x.shape[-kernel_dim:], kernel.shape[2:], strides))
+    out_shape = x.shape[:-kernel_dim-1] + (kernel.shape[0],) + out_image_shape
+    out_tensor = device.Tensor.empty(out_shape, dtype=x.dtype)
+    # build kernel
+    knl = cache_build_conv_kernel(device.context, kernel_dim=kernel_dim, dtype=x.dtype)
+    # set input arguemnts
+    knl.set_args(
+        # input and kernel data
+        x.contiguous().data,
+        kernel.contiguous().data,
+        out_tensor.data,
+        # in- and output shape
+        i32(kernel.shape[1]), i32(prod(x.shape[-kernel_dim:])),
+        *(i32(s) for s in x.shape[-kernel_dim:]),
+        *(i32(s) for s in out_image_shape),
+        # kernel shape without output channels
+        i32(prod(kernel.shape[-kernel_dim:])),
+        *(i32(s) for s in kernel.shape[-kernel_dim:]),
+        # strides
+        *(i32(st) for st in strides)
+    )
+    # execute kernel
+    global_shape = [x.shape[0], kernel.shape[0], prod(out_image_shape)]  # batch, out-channels, flat-out-image
+    local_shape = None
+    cl.enqueue_nd_range_kernel(device.queue, knl, global_shape, local_shape).wait()
+    # return output tensor
+    return out_tensor

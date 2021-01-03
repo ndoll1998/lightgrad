@@ -49,6 +49,24 @@ if opencl_available:
             opencl_compare_with_numpy(lambda a, b: a @ b, shapes=[(64, 64), (64, 64)], transpose=True)
             opencl_compare_with_numpy(lambda a, b: a @ b, shapes=[(32, 64), (64, 128)])
             opencl_compare_with_numpy(lambda a, b: a @ b, shapes=[(13, 54), (54, 76)])
+        def test_conv(self):
+            from lightgrad.autograd import CpuTensor
+            for dim in [1, 2, 3]:                       # dimensions
+                for shape in [3, 6, 9]:                # shape
+                    for stride in [1, 2, 3]:            # strides
+                        for kernel in [3, 5, 7]:        # kernel
+                            for in_c in [1, 2, 3]:      # in channels
+                                for out_c in [1, 2, 3]: # out_channels
+                                    # only valid setups
+                                    if kernel <= shape:
+                                        # create kernel
+                                        cpu_k = CpuTensor.uniform(-1, 1, shape=(out_c, in_c) + (kernel,)*dim)
+                                        opencl_k = cpu_k.opencl()
+                                        # compare outputs
+                                        opencl_compare_with_cpu(
+                                            lambda x: x.conv(opencl_k if isinstance(x, OpenCLTensor) else cpu_k, strides=stride),
+                                            shapes=[(2, in_c) + (shape,)*dim]
+                                        )
             
         """ Reductions/Selections """
         def test_sum(self):
@@ -107,8 +125,8 @@ if opencl_available:
         test_mul = lambda self: opencl_check_gradients("mul", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True)
         test_pow = lambda self: opencl_check_gradients("pow", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True, lowhigh=(0, 1), eps=1e-5, tol=0.01)
         def test_div(self):
-            opencl_check_gradients("div", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True, lowhigh=(0.1, 10))
-            opencl_check_gradients("div", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True, lowhigh=(-10, -0.1))
+            opencl_check_gradients("div", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True, lowhigh=(0.1, 10), tol=0.005)
+            opencl_check_gradients("div", shapes=[(5, 5), (5, 5)], broadcast=True, transpose=True, lowhigh=(-10, -0.1), tol=0.005)
         def test_dot(self):
             opencl_check_gradients("dot", shapes=[(5, 5), (5, 5)], transpose=True)
             opencl_check_gradients("dot", shapes=[(9, 4), (4, 14)])

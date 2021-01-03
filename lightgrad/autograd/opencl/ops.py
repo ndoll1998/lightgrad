@@ -346,7 +346,7 @@ class sum(Function):
     def forward(ctx, x, axis:int =None, keepdims:bool =False):
         # prepare axis and apply reduction
         axis = _prepare_axis(x, axis)
-        y = kernels.reduction('a + b', x, axis=axis, neutral='0')
+        y = kernels.reduce('a + b', x, axis=axis, neutral='0')
         # save and squeeze if neccessary
         ctx.save_for_backward(x.shape, keepdims, axis)
         return y if keepdims else _squeeze(y, axis)
@@ -372,7 +372,7 @@ class max(Function):
     def forward(ctx, x, axis:int =None, keepdims:bool =False):
         # prepare axis and apply reduction
         axis = _prepare_axis(x, axis)
-        y = kernels.reduction('max(a, b)', x, axis=axis, neutral="-INFINITY")
+        y = kernels.reduce('max(a, b)', x, axis=axis, neutral="-INFINITY")
         # save and squeeze if neccessary
         ctx.save_for_backward(x, y)
         return y if keepdims else _squeeze(y, axis=axis)
@@ -388,7 +388,7 @@ class min(Function):
     def forward(ctx, x, axis:int =None, keepdims:bool =False):
         # prepare axis and apply reduction
         axis = _prepare_axis(x, axis)
-        y = kernels.reduction('min(a, b)', x, axis=axis, neutral="INFINITY")
+        y = kernels.reduce('min(a, b)', x, axis=axis, neutral="INFINITY")
         # save and squeeze if neccessary
         ctx.save_for_backward(x, y)
         return y if keepdims else _squeeze(y, axis=axis)
@@ -398,3 +398,11 @@ class min(Function):
             x=x, y=y, g=out_grad, output='o',
             op="o = (x == y)? g : 0;"
         )[0]
+
+
+@OpenCLTensor.register_op()
+class conv(Function):
+    def forward(ctx, t, kernel, strides=1):
+        # prepare strides and apply convolution
+        strides = ((strides,) * (len(kernel.shape) - 2)) if isinstance(strides, int) else strides
+        return kernels.conv(t, kernel, strides=strides)

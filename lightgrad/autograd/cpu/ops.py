@@ -305,10 +305,10 @@ class conv(Function):
         strides = t.strides[:-n] + tuple(ts * ws for ts, ws in zip(t.strides[-n:], strides)) + t.strides[-n:]
         return np.lib.stride_tricks.as_strided(t, shape=shape, strides=strides)
 
-    def forward(ctx, t, kernel, strides):
+    def forward(ctx, t, kernel, strides=1):
         # preparation
         n, m = len(kernel.shape) - 1, len(t.shape)
-        strides = ((strides,) * n) if isinstance(strides, int) else strides
+        strides = ((strides,) * n) if isinstance(strides, int) else (1,) + strides if len(strides) == n-1 else strides
         assert m >= n == len(strides)
         # build shape and strides
         x = conv.__stride(t, kernel.shape[1:], strides)

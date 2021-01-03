@@ -52,7 +52,7 @@ if opencl_available:
         def test_conv(self):
             from lightgrad.autograd import CpuTensor
             for dim in [1, 2, 3]:                       # dimensions
-                for shape in [3, 6, 9]:                # shape
+                for shape in [3, 6, 9]:                 # shape
                     for stride in [1, 2, 3]:            # strides
                         for kernel in [3, 5, 7]:        # kernel
                             for in_c in [1, 2, 3]:      # in channels

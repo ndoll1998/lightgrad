@@ -99,7 +99,7 @@ def compare_with_cpu(cls,
         cpu_out = cpu_fn(*cpu_arrays, **kwargs).numpy()
         cls_out = cls_fn(*cls_arrays, **kwargs).numpy()
         # assert all close
-        np.testing.assert_allclose(cpu_out, cls_out, rtol=1e-5, atol=1e-5)
+        np.testing.assert_allclose(cpu_out, cls_out, rtol=1e-3, atol=1e-3)
 
 def check_gradients(cls,
     fn_or_name:str,

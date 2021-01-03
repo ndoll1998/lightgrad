@@ -533,7 +533,7 @@ def cache_build_conv_kernel(context,
             // gather work-item information
             const uint gi = get_global_id(2); // batch
             const uint gj = get_global_id(1); // out-channel
-            const uint gk = get_global_id(0); // flat-out-channel
+            const uint gk = get_global_id(0); // flat-out-image
             // dimensions
             const uint out_channels = get_global_size(1);
             const uint flat_out_image_size = get_global_size(0);
@@ -618,7 +618,7 @@ def conv(
         *(i32(st) for st in strides)
     )
     # execute kernel
-    global_shape = [prod(out_image_shape), kernel.shape[0], x.shape[0]]  # batch, out-channels, flat-out-image
+    global_shape = [prod(out_image_shape), kernel.shape[0], x.shape[0]]  # flat-out-image, out-channels, batch
     local_shape = None
     cl.enqueue_nd_range_kernel(device.queue, knl, global_shape, local_shape).wait()
     # return output tensor

@@ -39,12 +39,12 @@ def div(a, b):
 @WrapperFunction.from_function
 def rsub(b, a):
     """ requires sub operator """
-    return AbstractTensor.sub(a, b)
+    return b.__class__.sub(a, b)
 @AbstractTensor.register_op("__rtruediv__")
 @WrapperFunction.from_function
 def rdiv(b, a):
     """ requires div operator """
-    return AbstractTensor.div(a, b)
+    return b.__class__.div(a, b)
 
 
 """ Non-Linear Activations """

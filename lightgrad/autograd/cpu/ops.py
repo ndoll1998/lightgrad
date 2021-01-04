@@ -65,7 +65,7 @@ class add(Function):
     def backward(ctx, out_grad):
         return out_grad, out_grad
 
-@CpuTensor.register_op(override=True)
+@CpuTensor.register_op(overwrite=True)
 @_use_tensor_data
 class sub(Function):
     def forward(ctx, a, b):
@@ -83,7 +83,7 @@ class mul(Function):
         a, b = ctx.get_saved_tensors()
         return out_grad * b, a * out_grad
 
-@CpuTensor.register_op(override=True)
+@CpuTensor.register_op(overwrite=True)
 @_use_tensor_data
 class div(Function):
     def forward(ctx, a, b):
@@ -117,28 +117,28 @@ class dot(Function):
 
 """ Inplace Operators """
 
-@CpuTensor.register_op("__iadd__", override=True)
+@CpuTensor.register_op("__iadd__", overwrite=True)
 @_use_tensor_data
 class iadd(Function):
     def forward(ctx, t, other):
         t += other
         return t
 
-@CpuTensor.register_op("__isub__", override=True)
+@CpuTensor.register_op("__isub__", overwrite=True)
 @_use_tensor_data
 class isub(Function):
     def forward(ctx, t, other):
         t -= other
         return t
 
-@CpuTensor.register_op("__imul__", override=True)
+@CpuTensor.register_op("__imul__", overwrite=True)
 @_use_tensor_data
 class imul(Function):
     def forward(ctx, t, other):
         t *= other
         return t
 
-@CpuTensor.register_op("__itruediv__", override=True)
+@CpuTensor.register_op("__itruediv__", overwrite=True)
 @_use_tensor_data
 class itruediv(Function):
     def forward(ctx, t, other):
@@ -196,7 +196,7 @@ class log(Function):
         x, = ctx.get_saved_tensors()
         return (1 / x) * out_grad
 
-@CpuTensor.register_op(override=True)
+@CpuTensor.register_op(overwrite=True)
 @_use_tensor_data
 class sigmoid(Function):
     def forward(ctx, t):
@@ -207,7 +207,7 @@ class sigmoid(Function):
         y, = ctx.get_saved_tensors()
         return y * (1 - y) * out_grad
 
-@CpuTensor.register_op(override=True)
+@CpuTensor.register_op(overwrite=True)
 @_use_tensor_data
 class tanh(Function):
     def forward(ctx, t):

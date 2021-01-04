@@ -42,21 +42,21 @@ class Function(object, metaclass=__FunctionType):
         with Tracker(self.__class__.__name__, backward=True):
             in_grads = self.backward(out_grad)
             in_grads = in_grads if isinstance(in_grads, tuple) else (in_grads,)
-        # accumulate gradients in parent tensors
-        for t, g in zip(self.__parents, in_grads):
-            if isinstance(t, AbstractTensor) and t.requires_grad:
-                assert g is not None
-                # reverse broadcast gradient shape
-                if g.shape != t.shape:
-                    assert len(g.shape) >= len(t.shape), "Cannot unbroadcast shapes %s and %s" % (t.shape, g.shape)
-                    d = len(g.shape) - len(t.shape)
-                    broadcast_idx = tuple(range(d))
-                    broadcast_idx += tuple(d + i for i, (x, y) in enumerate(zip(t.shape, g.shape[d:])) if x != y)
-                    g = g.sum(axis=broadcast_idx, keepdims=True)
-                    g = g.reshape(*g.shape[d:])
-                assert g.shape == t.shape
-                # add gradient
-                t.add_grad(g)
+            # accumulate gradients in parent tensors
+            for t, g in zip(self.__parents, in_grads):
+                if isinstance(t, AbstractTensor) and t.requires_grad:
+                    assert g is not None
+                    # reverse broadcast gradient shape
+                    if g.shape != t.shape:
+                        assert len(g.shape) >= len(t.shape), "Cannot unbroadcast shapes %s and %s" % (t.shape, g.shape)
+                        d = len(g.shape) - len(t.shape)
+                        broadcast_idx = tuple(range(d))
+                        broadcast_idx += tuple(d + i for i, (x, y) in enumerate(zip(t.shape, g.shape[d:])) if x != y)
+                        g = g.sum(axis=broadcast_idx, keepdims=True)
+                        g = g.reshape(*g.shape[d:])
+                    assert g.shape == t.shape
+                    # add gradient
+                    t.add_grad(g)
 
     def save_for_backward(ctx, *args):
         ctx.__saved_for_backward += tuple(args)

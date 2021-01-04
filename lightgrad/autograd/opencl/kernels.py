@@ -507,7 +507,7 @@ def reduce(
 # TODO: load input data into local memory
 # See: https://www.evl.uic.edu/kreda/gpu/image-convolution/
 
-@lru_cache
+@lru_cache(maxsize=None)
 def cache_build_conv_kernel(context,
     kernel_dim:int,
     dtype:type

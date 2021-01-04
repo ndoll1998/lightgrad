@@ -57,7 +57,7 @@ class add(Function):
     def backward(ctx, out_grad):
         return out_grad, out_grad
 
-@OpenCLTensor.register_op(override=True)
+@OpenCLTensor.register_op(overwrite=True)
 class sub(Function):
     def forward(ctx, a, b):
         return kernels.atom(
@@ -82,7 +82,7 @@ class mul(Function):
             op='a_grad = b * g; b_grad = a * g;'
         )
 
-@OpenCLTensor.register_op(override=True)
+@OpenCLTensor.register_op(overwrite=True)
 class div(Function):
     def forward(ctx, a, b):
         ctx.save_for_backward(a, b)
@@ -133,7 +133,7 @@ class dot(Function):
 
 """ Inplace Operators """
 
-@OpenCLTensor.register_op('__iadd__', override=True)
+@OpenCLTensor.register_op('__iadd__', overwrite=True)
 class iadd(Function):
     def forward(ctx, t, other):
         return kernels.atom(
@@ -142,7 +142,7 @@ class iadd(Function):
             additional_read=('a',)
         )[0]
 
-@OpenCLTensor.register_op('__isub__', override=True)
+@OpenCLTensor.register_op('__isub__', overwrite=True)
 class isub(Function):
     def forward(ctx, t, other):
         return kernels.atom(
@@ -151,7 +151,7 @@ class isub(Function):
             additional_read=('a',)
         )[0]
 
-@OpenCLTensor.register_op('__imul__', override=True)
+@OpenCLTensor.register_op('__imul__', overwrite=True)
 class imul(Function):
     def forward(ctx, t, other):
         return kernels.atom(
@@ -160,7 +160,7 @@ class imul(Function):
             additional_read=('a',)
         )[0]
         
-@OpenCLTensor.register_op('__itruediv__', override=True)
+@OpenCLTensor.register_op('__itruediv__', overwrite=True)
 class idiv(Function):
     def forward(ctx, t, other):
         return kernels.atom(
@@ -240,7 +240,7 @@ class log(Function):
             op='o = (1 / t) * g'
         )[0]
 
-@OpenCLTensor.register_op(override=True)
+@OpenCLTensor.register_op(overwrite=True)
 class sigmoid(Function):
     def forward(ctx, t):
         y, = kernels.atom(
@@ -256,7 +256,7 @@ class sigmoid(Function):
             op='o = y * (1-y) * g'
         )[0]
 
-@OpenCLTensor.register_op(override=True)
+@OpenCLTensor.register_op(overwrite=True)
 class tanh(Function):
     def forward(ctx, t):
         y, = kernels.atom(

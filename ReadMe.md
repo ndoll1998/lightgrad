@@ -5,7 +5,7 @@ A lightweight automatic differentiation library with some simple machine learnin
 
 ## How to use
 
-We provide an API very simmilar to [pytorch](https://github.com/pytorch/pytorch). See the following simple example on how to use the autograd system (from `examples/gradient_descent.py`):
+We provide an API very similar to [pytorch](https://github.com/pytorch/pytorch). See the following simple example on how to use the autograd system (from `examples/gradient_descent.py`):
 
 ```python
 import lightgrad as light

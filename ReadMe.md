@@ -110,9 +110,6 @@ Pushing a tensor to another accelerator can be done using one function call.
 ```python
 # create a cpu tensor and push it to opencl
 light.uniform(-1, 1, shape=(10, 10)).opencl()
-```
-This can be advanced to pushing all parameters of a module to an accelerator by using the mapping functionality of modules.
-```python
 # push each parameter of the module to opencl
 module.map_parameters(lambda p: p.opencl())
 ```
